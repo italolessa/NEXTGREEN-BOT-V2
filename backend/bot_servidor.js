@@ -69,7 +69,7 @@ function calcularADX(highs, lows, closes, period = 14) {
     return { adx: dx, plusDI, minusDI };
 }
 
-// NOVO: Regressão Linear (O segredo do site original)
+// Regressão Linear
 function calcularRegressao(closes) {
     let n = closes.length;
     let sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0;
@@ -80,7 +80,7 @@ function calcularRegressao(closes) {
     return slope; 
 }
 
-// NOVO: Balance of Power (BOP) - Mede a força da compra vs venda
+// Balance of Power (BOP)
 function calcularBOP(candles) {
     let bopSum = 0;
     for (let i = 1; i <= 14; i++) {
@@ -93,7 +93,7 @@ function calcularBOP(candles) {
     return bopSum / 14;
 }
 
-// --- VARREDURA ADAPTADA ---
+// --- VARREDURA ---
 async function buscarAnaliseServidor() {
     if (!sdk) return;
     isBuscando = true;
@@ -138,7 +138,7 @@ async function buscarAnaliseServidor() {
     }
 }
 
-// --- ANÁLISE DE ATIVO ---
+// --- ANÁLISE DE ATIVO (MODO RELAXADO) ---
 async function analisarAtivoServidor(active) {
     try {
         const layerM1 = await sdk.realTimeChartDataLayer(active.id, 60);
@@ -158,17 +158,17 @@ async function analisarAtivoServidor(active) {
         let direcao = null;
         let score = 0;
 
-        // --- A LÓGICA DE CONFLUÊNCIA (Baseada no site original) ---
-        if (adxM1 > 20) { 
+        // --- REGRA RELAXADA EM 50% ---
+        if (adxM1 > 10) { 
             // SINAL DE COMPRA (CALL)
-            if (slope < 0 && rsiM1 < 45 && bop > 0.1 && plusDI_M1 > minusDI_M1) { 
+            if (slope < 0 && rsiM1 < 50 && bop > 0.01 && plusDI_M1 > minusDI_M1) { 
                 direcao = "CALL";
-                score = Math.min(99, Math.floor(75 + (45 - rsiM1) + (adxM1 / 3)));
+                score = Math.min(99, Math.floor(70 + (50 - rsiM1) + (adxM1 / 4)));
             } 
             // SINAL DE VENDA (PUT)
-            else if (slope > 0 && rsiM1 > 55 && bop < -0.1 && minusDI_M1 > plusDI_M1) { 
+            else if (slope > 0 && rsiM1 > 50 && bop < -0.01 && minusDI_M1 > plusDI_M1) { 
                 direcao = "PUT";
-                score = Math.min(99, Math.floor(75 + (rsiM1 - 55) + (adxM1 / 3)));
+                score = Math.min(99, Math.floor(70 + (rsiM1 - 50) + (adxM1 / 4)));
             }
         }
 
