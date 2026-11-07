@@ -1,21 +1,27 @@
 let configAtual = { timeframe: 'M1', mercado: 'OTC' };
-let historico = [];
+let sinalAtual = null;
 
 function setConfig(key, valor) {
     configAtual[key] = valor;
-    document.querySelectorAll('.btn-tab').forEach(t => t.classList.remove('active'));
-    
-    if (key === 'timeframe') document.getElementById(valor === 'M1' ? 'tab-m1' : 'tab-m5').classList.add('active');
-    else document.getElementById(valor === 'OTC' ? 'tab-otc' : 'tab-aberto').classList.add('active');
+    document.querySelectorAll('.config-table td').forEach(td => td.classList.remove('active'));
+    if (key === 'timeframe') document.getElementById(valor === 'M1' ? 'btn-m1' : 'btn-m5').classList.add('active');
+    else document.getElementById(valor === 'OTC' ? 'btn-otc' : 'btn-aberto').classList.add('active');
 }
 
-function salvarConfig() {
-    window.api.configurarBusca(configAtual);
-    alert(`✅ Busca ativada para ${configAtual.timeframe} | ${configAtual.mercado}`);
-}
-
-window.api.onNovoSinal((dados) => {
+function solicitarBusca() {
     document.getElementById('msg-inicial').style.display = 'none';
+    document.getElementById('area-sinal').style.display = 'none';
+    document.getElementById('loader').style.display = 'block';
+    
+    // Envia a configuração para o servidor no Render
+    window.api.configurarBusca(configAtual);
+}
+
+// Recebe o sinal da nuvem
+window.api.onNovoSinal((dados) => {
+    sinalAtual = dados;
+    
+    document.getElementById('loader').style.display = 'none';
     document.getElementById('area-sinal').style.display = 'block';
 
     document.getElementById('res-ativo').innerText = dados.ativo;
@@ -31,23 +37,18 @@ window.api.onNovoSinal((dados) => {
         box.className = 'sinal-box compra';
         box.innerHTML = '📈 COMPRA';
     }
-
-    if (historico.length === 0 || historico[0].id !== dados.id) {
-        historico.unshift(dados);
-        if (historico.length > 10) historico.pop();
-        atualizarHistorico();
-    }
 });
 
-function atualizarHistorico() {
-    document.getElementById('lista-historico').innerHTML = historico.map(h => `
-        <div class="historico-item">
-            <span style="color: var(--green); font-weight: bold; width: 120px;">${h.ativo}</span>
-            <span style="color: ${h.direcao === 'CALL' ? 'var(--green)' : 'var(--red)'}; width: 60px;">${h.direcao}</span>
-            <span style="width: 100px;">${h.timeframe} | ${h.score}%</span>
-            <span style="text-align: right; flex: 1;">⏰ ${h.horario}</span>
-        </div>
-    `).join('');
+function enviarParaCorretora() {
+    if (sinalAtual) {
+        alert(`✅ Sinal copiado: ${sinalAtual.ativo} | ${sinalAtual.direcao} às ${sinalAtual.horario}`);
+        document.getElementById('area-sinal').style.display = 'none';
+        document.getElementById('msg-inicial').style.display = 'block';
+    }
 }
 
-function fazerLogout() { if(confirm("Deseja sair?")) window.api.fazerLogout(); }
+function fazerLogout() {
+    if(confirm("Deseja desconectar sua conta da Polarium?")) {
+        window.api.fazerLogout();
+    }
+}

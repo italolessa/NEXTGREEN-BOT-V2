@@ -1,23 +1,24 @@
 const WS_URL = 'wss://ws.trade.polariumbroker.com/echo/websocket'; 
 
-let sdk, isBuscando = false;
-let ultimoSinalM1 = 0, ultimoSinalM5 = 0, ultimoAtivoEnviado = null, tempoUltimoEnvio = 0;
+let sdk;
+let isBuscando = false;
+let ultimoAtivoEnviado = null;
+let tempoUltimoEnvio = 0;
 
 async function iniciarBotServidor(window, tokenSsid) {
     if (!tokenSsid) return console.error("❌ Token não configurado.");
 
     console.log("⏳ Iniciando SDK no servidor...");
     try {
-        // --- AQUI ESTÁ A CORREÇÃO: Importação dinâmica do SDK ---
         const sdkModule = await import('@quadcode-tech/client-sdk-js');
         const { ClientSdk, SsidAuthMethod, BinaryOptionsDirection } = sdkModule;
 
         sdk = await ClientSdk.create(WS_URL, 82, new SsidAuthMethod(tokenSsid));
         global.BinaryOptionsDirection = BinaryOptionsDirection;
         
-        console.log("✅ SDK inicializado! Iniciando Estratégia Original de EMAs (M1 e M5)...");
+        console.log("✅ SDK inicializado! Aguardando comando de busca do App...");
         
-        // Roda a cada 30 segundos
+        // O Loop infinito que verifica a cada 30s
         setInterval(async () => {
             if (!isBuscando) {
                 await buscarAnaliseServidor();
@@ -43,8 +44,10 @@ function calcularEMA(dados, period) {
 // --- VARREDURA ---
 async function buscarAnaliseServidor() {
     if (!sdk) return;
+    if (!global.buscando) return; // <--- A MÁGICA AQUI: Só busca se o App mandar
+    
     isBuscando = true;
-    console.log(`🔎 [SERVIDOR] Buscando cruzamento de EMAs no M1 e M5...`);
+    console.log(`🔎 [SERVIDOR] Ativado! Buscando cruzamento de EMAs (M1 e M5)...`);
     
     try {
         const binaryOptions = await sdk.binaryOptions();
@@ -58,19 +61,23 @@ async function buscarAnaliseServidor() {
 
         // Analisa OTC
         for (let i = 0; i < ativosOtc.length; i += 5) {
+            if (!global.buscando) break; // Para se o usuário cancelar
             const lote = ativosOtc.slice(i, i + 5);
             const resultadosLote = await Promise.all(lote.map(ativo => analisarAtivoServidor(ativo, 'OTC')));
             melhoresSinais = melhoresSinais.concat(resultadosLote.filter(r => r !== null));
         }
 
         // Analisa Aberto
-        for (let i = 0; i < ativosAberto.length; i += 5) {
-            const lote = ativosAberto.slice(i, i + 5);
-            const resultadosLote = await Promise.all(lote.map(ativo => analisarAtivoServidor(ativo, 'ABERTO')));
-            melhoresSinais = melhoresSinais.concat(resultadosLote.filter(r => r !== null));
+        if (global.buscando) {
+            for (let i = 0; i < ativosAberto.length; i += 5) {
+                if (!global.buscando) break;
+                const lote = ativosAberto.slice(i, i + 5);
+                const resultadosLote = await Promise.all(lote.map(ativo => analisarAtivoServidor(ativo, 'ABERTO')));
+                melhoresSinais = melhoresSinais.concat(resultadosLote.filter(r => r !== null));
+            }
         }
 
-        if (melhoresSinais.length > 0) {
+        if (melhoresSinais.length > 0 && global.buscando) {
             melhoresSinais.sort((a, b) => b.score - a.score);
             const campeao = melhoresSinais[0];
             const agora = Date.now();
@@ -81,15 +88,17 @@ async function buscarAnaliseServidor() {
             } else {
                 ultimoAtivoEnviado = campeao.ativo;
                 tempoUltimoEnvio = agora;
+                
                 console.log(`🏆 [SINAL ${campeao.timeframe}] ${campeao.ativo} | ${campeao.direcao} | ${campeao.mercado} | Confiança: ${campeao.score}% | Hora: ${campeao.horario}`);
                 
-                // Envia o sinal para a API do servidor
+                // Envia o sinal para a API (que o app vai ler)
                 if (global.adicionarSinal) {
                     global.adicionarSinal(campeao);
+                    global.buscando = false; // Desliga a busca após enviar o sinal
                 }
             }
-        } else {
-            console.log("⚠️ Nenhum cruzamento de EMA válido no momento.");
+        } else if (global.buscando) {
+            console.log("⚠️ Nenhum cruzamento de EMA válido. O robô continua buscando a cada 30s...");
         }
     } catch (error) {
         console.error("❌ Erro na varredura:", error.message);
@@ -125,19 +134,13 @@ async function analisarTimeframe(active, timeframe, seconds) {
         let direcao = null;
         let score = 0;
 
-        const ultimoSinal = timeframe === 'M1' ? ultimoSinalM1 : ultimoSinalM5;
-
         const sinal_compra = ENC && (closeAtual > emab) && (emac_atual > emad_atual) && (closeAtual > close3);
         const sinal_venda = ENV && (closeAtual < emab) && (emac_atual < emad_atual) && (closeAtual < close3);
 
-        if (sinal_venda && ultimoSinal !== -1) {
+        if (sinal_venda) {
             direcao = "PUT"; score = 95;
-            if (timeframe === 'M1') ultimoSinalM1 = -1; else ultimoSinalM5 = -1;
-        } else if (sinal_compra && ultimoSinal !== 1) {
+        } else if (sinal_compra) {
             direcao = "CALL"; score = 95;
-            if (timeframe === 'M1') ultimoSinalM1 = 1; else ultimoSinalM5 = 1;
-        } else if (!sinal_compra && !sinal_venda) {
-            if (timeframe === 'M1') ultimoSinalM1 = 0; else ultimoSinalM5 = 0;
         }
 
         if (!direcao) return null;
