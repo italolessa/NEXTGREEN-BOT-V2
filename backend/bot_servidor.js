@@ -1,37 +1,56 @@
 const WS_URL = 'wss://ws.trade.polariumbroker.com/echo/websocket'; 
+
 let sdk, isBuscando = false;
 let ultimoSinalM1 = 0, ultimoSinalM5 = 0, ultimoAtivoEnviado = null, tempoUltimoEnvio = 0;
 
 async function iniciarBotServidor(window, tokenSsid) {
-    if (!tokenSsid) return;
+    if (!tokenSsid) return console.error("❌ Token não configurado.");
+
+    console.log("⏳ Iniciando SDK no servidor...");
     try {
+        // --- AQUI ESTÁ A CORREÇÃO: Importação dinâmica do SDK ---
         const sdkModule = await import('@quadcode-tech/client-sdk-js');
+        const { ClientSdk, SsidAuthMethod, BinaryOptionsDirection } = sdkModule;
+
         sdk = await ClientSdk.create(WS_URL, 82, new SsidAuthMethod(tokenSsid));
-        global.BinaryOptionsDirection = sdkModule.BinaryOptionsDirection;
+        global.BinaryOptionsDirection = BinaryOptionsDirection;
         
+        console.log("✅ SDK inicializado! Iniciando Estratégia Original de EMAs (M1 e M5)...");
+        
+        // Roda a cada 30 segundos
         setInterval(async () => {
-            if (!isBuscando) await buscarAnaliseServidor();
+            if (!isBuscando) {
+                await buscarAnaliseServidor();
+            }
         }, 30000);
-    } catch (error) { console.error("❌ Erro:", error.message); }
+
+    } catch (error) {
+        console.error("❌ Erro ao conectar no servidor:", error.message);
+    }
 }
 
+// --- MATEMÁTICA DAS MÉDIAS MÓVEIS EXPONENCIAIS (EMA) ---
 function calcularEMA(dados, period) {
     if (dados.length < period) return dados[dados.length - 1];
     const k = 2 / (period + 1);
     let ema = dados.slice(0, period).reduce((a, b) => a + b, 0) / period;
-    for (let i = period; i < dados.length; i++) ema = dados[i] * k + ema * (1 - k);
+    for (let i = period; i < dados.length; i++) {
+        ema = dados[i] * k + ema * (1 - k);
+    }
     return ema;
 }
 
+// --- VARREDURA ---
 async function buscarAnaliseServidor() {
     if (!sdk) return;
     isBuscando = true;
+    console.log(`🔎 [SERVIDOR] Buscando cruzamento de EMAs no M1 e M5...`);
     
     try {
         const binaryOptions = await sdk.binaryOptions();
         const actives = binaryOptions.getActives();
         
-        // O bot agora varre OTC e Aberto
+        // Filtra todos os ativos OTC e abertos
         let ativosOtc = actives.filter(a => a.ticker.includes('-OTC'));
         let ativosAberto = actives.filter(a => !a.ticker.includes('-OTC'));
 
@@ -40,15 +59,15 @@ async function buscarAnaliseServidor() {
         // Analisa OTC
         for (let i = 0; i < ativosOtc.length; i += 5) {
             const lote = ativosOtc.slice(i, i + 5);
-            const res = await Promise.all(lote.map(ativo => analisarAtivoServidor(ativo, 'OTC')));
-            melhoresSinais = melhoresSinais.concat(res.filter(r => r !== null));
+            const resultadosLote = await Promise.all(lote.map(ativo => analisarAtivoServidor(ativo, 'OTC')));
+            melhoresSinais = melhoresSinais.concat(resultadosLote.filter(r => r !== null));
         }
-        
+
         // Analisa Aberto
         for (let i = 0; i < ativosAberto.length; i += 5) {
             const lote = ativosAberto.slice(i, i + 5);
-            const res = await Promise.all(lote.map(ativo => analisarAtivoServidor(ativo, 'ABERTO')));
-            melhoresSinais = melhoresSinais.concat(res.filter(r => r !== null));
+            const resultadosLote = await Promise.all(lote.map(ativo => analisarAtivoServidor(ativo, 'ABERTO')));
+            melhoresSinais = melhoresSinais.concat(resultadosLote.filter(r => r !== null));
         }
 
         if (melhoresSinais.length > 0) {
@@ -56,65 +75,99 @@ async function buscarAnaliseServidor() {
             const campeao = melhoresSinais[0];
             const agora = Date.now();
             
+            // Trava para não repetir o mesmo ativo na mesma vela
             if (campeao.ativo === ultimoAtivoEnviado && (agora - tempoUltimoEnvio) < 60000) {
-                // Ignora
+                console.log(`⏳ [IGNORADO] ${campeao.ativo} (Aguardando nova vela)`);
             } else {
                 ultimoAtivoEnviado = campeao.ativo;
                 tempoUltimoEnvio = agora;
+                console.log(`🏆 [SINAL ${campeao.timeframe}] ${campeao.ativo} | ${campeao.direcao} | ${campeao.mercado} | Confiança: ${campeao.score}% | Hora: ${campeao.horario}`);
                 
+                // Envia o sinal para a API do servidor
                 if (global.adicionarSinal) {
                     global.adicionarSinal(campeao);
-                    console.log(`🏆 [SINAL] ${campeao.ativo} | ${campeao.direcao} | ${campeao.timeframe} | ${campeao.mercado}`);
                 }
             }
+        } else {
+            console.log("⚠️ Nenhum cruzamento de EMA válido no momento.");
         }
-    } catch (error) { console.error("❌ Erro:", error.message); } finally { isBuscando = false; }
+    } catch (error) {
+        console.error("❌ Erro na varredura:", error.message);
+    } finally {
+        isBuscando = false;
+    }
 }
 
+// --- FUNÇÃO AUXILIAR PARA ANALISAR UM TIMEFRAME ESPECÍFICO ---
+async function analisarTimeframe(active, timeframe, seconds) {
+    try {
+        const layer = await sdk.realTimeChartDataLayer(active.id, seconds);
+        const candles = await layer.fetchAllCandles(Math.floor(Date.now() / 1000) - (250 * seconds)); 
+
+        if (!candles || candles.length < 210) return null;
+
+        const closes = candles.map(c => c.close);
+        const hlc3 = candles.map(c => (c.max + c.min + c.close) / 3);
+
+        const closeAtual = closes[closes.length - 1];
+        const close3 = closes[closes.length - 4];
+
+        const emab = calcularEMA(closes, 200); 
+        const emac_atual = calcularEMA(hlc3, 14);
+        const emad_atual = calcularEMA(hlc3, 34);
+        
+        const emac_anterior = calcularEMA(hlc3.slice(0, -1), 14);
+        const emad_anterior = calcularEMA(hlc3.slice(0, -1), 34);
+
+        const ENC = (emac_anterior < emad_anterior) && (emac_atual > emad_atual);
+        const ENV = (emac_anterior > emad_anterior) && (emac_atual < emad_atual);
+
+        let direcao = null;
+        let score = 0;
+
+        const ultimoSinal = timeframe === 'M1' ? ultimoSinalM1 : ultimoSinalM5;
+
+        const sinal_compra = ENC && (closeAtual > emab) && (emac_atual > emad_atual) && (closeAtual > close3);
+        const sinal_venda = ENV && (closeAtual < emab) && (emac_atual < emad_atual) && (closeAtual < close3);
+
+        if (sinal_venda && ultimoSinal !== -1) {
+            direcao = "PUT"; score = 95;
+            if (timeframe === 'M1') ultimoSinalM1 = -1; else ultimoSinalM5 = -1;
+        } else if (sinal_compra && ultimoSinal !== 1) {
+            direcao = "CALL"; score = 95;
+            if (timeframe === 'M1') ultimoSinalM1 = 1; else ultimoSinalM5 = 1;
+        } else if (!sinal_compra && !sinal_venda) {
+            if (timeframe === 'M1') ultimoSinalM1 = 0; else ultimoSinalM5 = 0;
+        }
+
+        if (!direcao) return null;
+
+        const proximoMinuto = Math.floor(Date.now() / 60000) * 60000 + 60000;
+        const horaEntrada = new Date(proximoMinuto).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
+        return { ativo: active.ticker, timeframe: timeframe, direcao: direcao, score: score, horario: horaEntrada };
+
+    } catch (e) {
+        return null;
+    }
+}
+
+// --- ANÁLISE DE ATIVO (CHAMA M1 E M5) ---
 async function analisarAtivoServidor(active, mercado) {
     try {
-        const layerM1 = await sdk.realTimeChartDataLayer(active.id, 60);
-        const candlesM1 = await layerM1.fetchAllCandles(Math.floor(Date.now() / 1000) - (250 * 60)); 
-        const layerM5 = await sdk.realTimeChartDataLayer(active.id, 300);
-        const candlesM5 = await layerM5.fetchAllCandles(Math.floor(Date.now() / 1000) - (250 * 300)); 
+        const [resultadoM1, resultadoM5] = await Promise.all([
+            analisarTimeframe(active, 'M1', 60),
+            analisarTimeframe(active, 'M5', 300)
+        ]);
 
-        if (!candlesM1 || candlesM1.length < 210 || !candlesM5 || candlesM5.length < 210) return null;
-
-        const closesM1 = candlesM1.map(c => c.close);
-        const hlc3M1 = candlesM1.map(c => (c.max + c.min + c.close) / 3);
-        const closesM5 = candlesM5.map(c => c.close);
-        const hlc3M5 = candlesM5.map(c => (c.max + c.min + c.close) / 3);
-
-        const checkM1 = verificarCruzamento(closesM1, hlc3M1);
-        const checkM5 = verificarCruzamento(closesM5, hlc3M5);
-
-        if (checkM1) {
-            return { ativo: active.ticker, timeframe: 'M1', direcao: checkM1, score: 95, mercado, horario: getHora(), id: Date.now() };
-        }
-        if (checkM5) {
-            return { ativo: active.ticker, timeframe: 'M5', direcao: checkM5, score: 95, mercado, horario: getHora(), id: Date.now() };
-        }
+        const sinais = [];
+        if (resultadoM1) sinais.push({...resultadoM1, mercado: mercado, id: Date.now()});
+        if (resultadoM5) sinais.push({...resultadoM5, mercado: mercado, id: Date.now()});
+        
+        return sinais.length > 0 ? sinais[0] : null; 
+    } catch (e) {
         return null;
-    } catch (e) { return null; }
-}
-
-function verificarCruzamento(closes, hlc3) {
-    const emab = calcularEMA(closes, 200); 
-    const emac_atual = calcularEMA(hlc3, 14);
-    const emad_atual = calcularEMA(hlc3, 34);
-    const emac_anterior = calcularEMA(hlc3.slice(0, -1), 14);
-    const emad_anterior = calcularEMA(hlc3.slice(0, -1), 34);
-    const closeAtual = closes[closes.length - 1];
-    const close3 = closes[closes.length - 4];
-
-    if ((emac_anterior < emad_anterior) && (emac_atual > emad_atual) && (closeAtual > emab) && (closeAtual > close3)) return "CALL";
-    if ((emac_anterior > emad_anterior) && (emac_atual < emad_atual) && (closeAtual < emab) && (closeAtual < close3)) return "PUT";
-    return null;
-}
-
-function getHora() {
-    const proximoMinuto = Math.floor(Date.now() / 60000) * 60000 + 60000;
-    return new Date(proximoMinuto).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    }
 }
 
 module.exports = { iniciarBotServidor };
