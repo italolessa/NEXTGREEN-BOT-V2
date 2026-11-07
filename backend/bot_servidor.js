@@ -1,21 +1,16 @@
-// --- URL CORRETA E ESTÁVEL DA POLARIUM ---
 const WS_URL = 'wss://ws.trade.polariumbroker.com/echo/websocket'; 
 
 let sdk;
 let isBuscando = false;
 
 async function iniciarBotServidor(window, tokenSsid) {
-    if (!tokenSsid) {
-        console.error("❌ ERRO: Token (POLARIUM_TOKEN) não configurado.");
-        return;
-    }
+    if (!tokenSsid) return console.error("❌ ERRO: Token não configurado.");
 
     console.log("⏳ Iniciando SDK no servidor...");
     try {
         const sdkModule = await import('@quadcode-tech/client-sdk-js');
         const { ClientSdk, SsidAuthMethod, BinaryOptionsDirection } = sdkModule;
 
-        // Conecta na Polarium
         sdk = await ClientSdk.create(WS_URL, 82, new SsidAuthMethod(tokenSsid));
         global.BinaryOptionsDirection = BinaryOptionsDirection;
         
@@ -71,18 +66,18 @@ function calcularADX(highs, lows, closes, period = 14) {
 async function buscarAnaliseServidor() {
     if (!sdk) return;
     isBuscando = true;
-    console.log(`🔎 [SERVIDOR] Iniciando varredura em TODOS os ativos OTC...`);
+    console.log(`🔎 [SERVIDOR] Iniciando varredura no mercado OTC...`);
     
     try {
         const binaryOptions = await sdk.binaryOptions();
         const actives = binaryOptions.getActives();
         
-        // Agora pega TODOS os ativos OTC, sem filtrar apenas os principais (inclui AUDJPY, USDTHB, etc.)
+        // Filtra apenas ativos OTC
         let ativosFiltrados = actives.filter(a => a.ticker.includes('-OTC'));
 
         let melhoresSinais = [];
 
-        // Processa em lotes de 5 para não estourar a memória do Render
+        // Processa em lotes de 5
         for (let i = 0; i < ativosFiltrados.length; i += 5) {
             const lote = ativosFiltrados.slice(i, i + 5);
             const resultadosLote = await Promise.all(lote.map(ativo => analisarAtivoServidor(ativo)));
@@ -90,8 +85,8 @@ async function buscarAnaliseServidor() {
         }
 
         if (melhoresSinais.length > 0) {
-            melhoresSinais.sort((a, b) => b.score - a.score);
-            const campeao = melhoresSinais[0];
+            // Pega o primeiro que achou para o log não lotar
+            const campeao = melhoresSinais[0]; 
             
             // IMPRIME NO CONSOLE DO RENDER
             console.log(`🏆 [SINAL ENCONTRADO] ${campeao.ativo} | ${campeao.direcao} | RSI: ${campeao.rsi} | ADX: ${campeao.adx} | Confiança: ${campeao.score}% | Hora: ${campeao.horario}`);
@@ -105,7 +100,7 @@ async function buscarAnaliseServidor() {
     }
 }
 
-// --- ANÁLISE DE ATIVO (A FÓRMULA DO SITE) ---
+// --- ANÁLISE DE ATIVO (MODO DE TESTE) ---
 async function analisarAtivoServidor(active) {
     try {
         // Pega os dados do gráfico M1
@@ -121,24 +116,17 @@ async function analisarAtivoServidor(active) {
         const rsiM1 = calcularRSI(closesM1);
         const { adx: adxM1, plusDI: plusDI_M1, minusDI: minusDI_M1 } = calcularADX(highsM1, lowsM1, closesM1);
 
+        // --- MODO DE TESTE (FILTROS ZERADOS) ---
+        // Ele vai gerar um sinal para QUALQUER ativo que tenha RSI < 50 (CALL) ou RSI > 50 (PUT)
         let direcao = null;
-        let score = 0;
-
-        // --- A LÓGICA EXATA DO SITE (BASEADA NOS SEUS PRINTS) ---
-        // Exige uma tendência de ADX > 20 e o RSI nos extremos (<40 ou >60)
-        if (adxM1 > 20) { 
-            if (rsiM1 < 40 && plusDI_M1 > minusDI_M1) { 
-                direcao = "CALL";
-                // Fórmula ajustada para chegar perto dos 83% a 96% que eles mostram
-                score = Math.min(99, Math.floor(70 + (40 - rsiM1) + (adxM1 / 3)));
-            } 
-            else if (rsiM1 > 60 && minusDI_M1 > plusDI_M1) { 
-                direcao = "PUT";
-                score = Math.min(99, Math.floor(70 + (rsiM1 - 60) + (adxM1 / 3)));
-            }
+        if (rsiM1 < 50) {
+            direcao = "CALL";
+        } else {
+            direcao = "PUT";
         }
 
-        if (!direcao) return null;
+        // O Score será apenas uma simulação visual
+        const score = Math.floor(60 + Math.random() * 30);
 
         const proximoMinuto = Math.floor(Date.now() / 60000) * 60000 + 60000;
         const horaEntrada = new Date(proximoMinuto).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
