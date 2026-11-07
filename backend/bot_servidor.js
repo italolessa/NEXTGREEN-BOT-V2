@@ -2,38 +2,49 @@ const WS_URL = 'wss://ws.trade.polariumbroker.com/echo/websocket';
 
 let sdk;
 let isBuscando = false;
-let ultimoAtivoEnviado = null;
-let tempoUltimoEnvio = 0;
 
 async function iniciarBotServidor(window, tokenSsid) {
     if (!tokenSsid) return console.error("❌ Token não configurado.");
 
+    console.log("⏳ Iniciando SDK no servidor...");
     try {
         const sdkModule = await import('@quadcode-tech/client-sdk-js');
         const { ClientSdk, SsidAuthMethod, BinaryOptionsDirection } = sdkModule;
+
         sdk = await ClientSdk.create(WS_URL, 82, new SsidAuthMethod(tokenSsid));
         global.BinaryOptionsDirection = BinaryOptionsDirection;
         
-        console.log("✅ SDK inicializado! Aguardando comando...");
+        console.log("✅ SDK inicializado! Aguardando comando do App...");
         
+        // Loop de verificação (a cada 30 segundos)
         setInterval(async () => {
-            if (!isBuscando) await buscarAnaliseServidor();
+            if (!isBuscando) {
+                await buscarAnaliseServidor();
+            }
         }, 30000);
 
-    } catch (error) { console.error("❌ Erro:", error.message); }
+    } catch (error) {
+        console.error("❌ Erro ao conectar no servidor:", error.message);
+    }
 }
 
+// --- MATEMÁTICA DAS MÉDIAS MÓVEIS EXPONENCIAIS (EMA) ---
 function calcularEMA(dados, period) {
     if (dados.length < period) return dados[dados.length - 1];
     const k = 2 / (period + 1);
     let ema = dados.slice(0, period).reduce((a, b) => a + b, 0) / period;
-    for (let i = period; i < dados.length; i++) ema = dados[i] * k + ema * (1 - k);
+    for (let i = period; i < dados.length; i++) {
+        ema = dados[i] * k + ema * (1 - k);
+    }
     return ema;
 }
 
+// --- VARREDURA ---
 async function buscarAnaliseServidor() {
-    if (!sdk || !global.buscando) return;
+    if (!sdk || !global.buscando) return; // Só busca se o App mandou
+    
     isBuscando = true;
+    console.log(`🔎 [SERVIDOR] Iniciando varredura...`);
     
     try {
         const binaryOptions = await sdk.binaryOptions();
@@ -42,14 +53,23 @@ async function buscarAnaliseServidor() {
         let ativosOtc = actives.filter(a => a.ticker.includes('-OTC'));
         let ativosAberto = actives.filter(a => !a.ticker.includes('-OTC'));
 
+        // --- TRAVA PARA NÃO REPETIR O ATIVO ---
+        if (global.configuracaoAtual && global.configuracaoAtual.ignorarAtivo) {
+            const ativoIgnorado = global.configuracaoAtual.ignorarAtivo.replace(" (OTC)", "").replace("/", "");
+            ativosOtc = ativosOtc.filter(a => !a.ticker.includes(ativoIgnorado));
+            ativosAberto = ativosAberto.filter(a => !a.ticker.includes(ativoIgnorado));
+            console.log(`🛡️ [FILTRO] Ativo ignorado: ${ativoIgnorado}`);
+        }
+        // --------------------------------------
+
         let melhoresSinais = [];
 
         // Analisa OTC
         for (let i = 0; i < ativosOtc.length; i += 5) {
-            if (!global.buscando) break;
+            if (!global.buscando) break; 
             const lote = ativosOtc.slice(i, i + 5);
-            const res = await Promise.all(lote.map(ativo => analisarAtivoServidor(ativo, 'OTC')));
-            melhoresSinais = melhoresSinais.concat(res.filter(r => r !== null));
+            const resultadosLote = await Promise.all(lote.map(ativo => analisarAtivoServidor(ativo, 'OTC')));
+            melhoresSinais = melhoresSinais.concat(resultadosLote.filter(r => r !== null));
         }
 
         // Analisa Aberto
@@ -57,29 +77,31 @@ async function buscarAnaliseServidor() {
             for (let i = 0; i < ativosAberto.length; i += 5) {
                 if (!global.buscando) break;
                 const lote = ativosAberto.slice(i, i + 5);
-                const res = await Promise.all(lote.map(ativo => analisarAtivoServidor(ativo, 'ABERTO')));
-                melhoresSinais = melhoresSinais.concat(res.filter(r => r !== null));
+                const resultadosLote = await Promise.all(lote.map(ativo => analisarAtivoServidor(ativo, 'ABERTO')));
+                melhoresSinais = melhoresSinais.concat(resultadosLote.filter(r => r !== null));
             }
         }
 
         if (melhoresSinais.length > 0 && global.buscando) {
             melhoresSinais.sort((a, b) => b.score - a.score);
             const campeao = melhoresSinais[0];
-            const agora = Date.now();
             
-            if (campeao.ativo === ultimoAtivoEnviado && (agora - tempoUltimoEnvio) < 60000) {
-                // Ignora repetição de vela
-            } else {
-                ultimoAtivoEnviado = campeao.ativo;
-                tempoUltimoEnvio = agora;
-                console.log(`🏆 [SINAL] ${campeao.ativo} | ${campeao.direcao}`);
-                if (global.adicionarSinal) global.adicionarSinal(campeao);
+            console.log(`🏆 [SINAL] ${campeao.ativo} | ${campeao.direcao}`);
+            
+            if (global.adicionarSinal) {
+                global.adicionarSinal(campeao);
             }
+        } else if (global.buscando) {
+            console.log("⚠️ Nenhum sinal encontrado na varredura.");
         }
-    } catch (error) { console.error("❌ Erro:", error.message); } 
-    finally { isBuscando = false; }
+    } catch (error) {
+        console.error("❌ Erro na varredura:", error.message);
+    } finally {
+        isBuscando = false;
+    }
 }
 
+// --- ANÁLISE TÉCNICA DO ATIVO ---
 async function analisarAtivoServidor(active, mercado) {
     try {
         const layerM1 = await sdk.realTimeChartDataLayer(active.id, 60);
@@ -99,8 +121,11 @@ async function analisarAtivoServidor(active, mercado) {
 
         if (checkM1) return { ativo: active.ticker, timeframe: 'M1', direcao: checkM1, score: 95, mercado, horario: getHora(), id: Date.now() };
         if (checkM5) return { ativo: active.ticker, timeframe: 'M5', direcao: checkM5, score: 95, mercado, horario: getHora(), id: Date.now() };
+        
         return null;
-    } catch (e) { return null; }
+    } catch (e) {
+        return null;
+    }
 }
 
 function verificarCruzamento(closes, hlc3) {
