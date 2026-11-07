@@ -2,7 +2,8 @@ const WS_URL = 'wss://ws.trade.polariumbroker.com/echo/websocket';
 
 let sdk;
 let isBuscando = false;
-let ultimoSinal = 0; // Trava: 1 = Compra, -1 = Venda, 0 = Neutro
+let ultimoSinalM1 = 0; 
+let ultimoSinalM5 = 0; 
 let ultimoAtivoEnviado = null;
 let tempoUltimoEnvio = 0;
 
@@ -17,7 +18,7 @@ async function iniciarBotServidor(window, tokenSsid) {
         sdk = await ClientSdk.create(WS_URL, 82, new SsidAuthMethod(tokenSsid));
         global.BinaryOptionsDirection = BinaryOptionsDirection;
         
-        console.log("✅ SDK inicializado! Iniciando Estratégia NextGreen Original (EMAs)...");
+        console.log("✅ SDK inicializado! Iniciando Estratégia Original de EMAs (M1 e M5)...");
         
         // Roda a cada 30 segundos
         setInterval(async () => {
@@ -46,13 +47,12 @@ function calcularEMA(dados, period) {
 async function buscarAnaliseServidor() {
     if (!sdk) return;
     isBuscando = true;
-    console.log(`🔎 [SERVIDOR] Buscando cruzamento de EMAs no mercado OTC...`);
+    console.log(`🔎 [SERVIDOR] Buscando cruzamento de EMAs no M1 e M5...`);
     
     try {
         const binaryOptions = await sdk.binaryOptions();
         const actives = binaryOptions.getActives();
         
-        // Filtra todos os ativos OTC
         let ativosFiltrados = actives.filter(a => a.ticker.includes('-OTC'));
 
         let melhoresSinais = [];
@@ -64,16 +64,18 @@ async function buscarAnaliseServidor() {
         }
 
         if (melhoresSinais.length > 0) {
+            // Ordena para pegar o sinal com maior score (se houver M1 e M5 ao mesmo tempo)
+            melhoresSinais.sort((a, b) => b.score - a.score);
             const campeao = melhoresSinais[0];
             const agora = Date.now();
             
-            // Trava para não ficar repetindo o mesmo ativo na mesma vela
+            // Trava para não repetir o mesmo ativo na mesma vela
             if (campeao.ativo === ultimoAtivoEnviado && (agora - tempoUltimoEnvio) < 60000) {
                 console.log(`⏳ [IGNORADO] ${campeao.ativo} (Aguardando nova vela)`);
             } else {
                 ultimoAtivoEnviado = campeao.ativo;
                 tempoUltimoEnvio = agora;
-                console.log(`🏆 [SINAL ESTRATÉGIA ORIGINAL] ${campeao.ativo} | ${campeao.direcao} | Confiança: ${campeao.score}% | Hora: ${campeao.horario}`);
+                console.log(`🏆 [SINAL ${campeao.timeframe}] ${campeao.ativo} | ${campeao.direcao} | Confiança: ${campeao.score}% | Hora: ${campeao.horario}`);
             }
         } else {
             console.log("⚠️ Nenhum cruzamento de EMA válido no momento.");
@@ -85,60 +87,54 @@ async function buscarAnaliseServidor() {
     }
 }
 
-// --- ANÁLISE COM A ESTRATÉGIA EXATA DO ARQUIVO ---
-async function analisarAtivoServidor(active) {
+// --- FUNÇÃO AUXILIAR PARA ANALISAR UM TIMEFRAME ESPECÍFICO ---
+async function analisarTimeframe(active, timeframe, seconds) {
     try {
-        const layerM1 = await sdk.realTimeChartDataLayer(active.id, 60);
+        const layer = await sdk.realTimeChartDataLayer(active.id, seconds);
         // Pega 250 candles para calcular a EMA de 200
-        const candlesM1 = await layerM1.fetchAllCandles(Math.floor(Date.now() / 1000) - (250 * 60)); 
+        const candles = await layer.fetchAllCandles(Math.floor(Date.now() / 1000) - (250 * seconds)); 
 
-        if (!candlesM1 || candlesM1.length < 210) return null;
+        if (!candles || candles.length < 210) return null;
 
-        const closes = candlesM1.map(c => c.close);
-        const hlc3 = candlesM1.map(c => (c.max + c.min + c.close) / 3);
+        const closes = candles.map(c => c.close);
+        const hlc3 = candles.map(c => (c.max + c.min + c.close) / 3);
 
         const closeAtual = closes[closes.length - 1];
-        const close3 = closes[closes.length - 4]; // Preço de 3 velas atrás
+        const close3 = closes[closes.length - 4];
 
         // Cálculo das EMAs
-        const emaa_atual = calcularEMA(closes, 21);
         const emab = calcularEMA(closes, 200); // Tendência Macro
         const emac_atual = calcularEMA(hlc3, 14);
         const emad_atual = calcularEMA(hlc3, 34);
         
-        // EMAs do candle anterior para verificar o cruzamento
         const emac_anterior = calcularEMA(hlc3.slice(0, -1), 14);
         const emad_anterior = calcularEMA(hlc3.slice(0, -1), 34);
 
-        // Condições de Cruzamento (O gatilho da estratégia)
+        // Condições de Cruzamento
         const ENC = (emac_anterior < emad_anterior) && (emac_atual > emad_atual);
         const ENV = (emac_anterior > emad_anterior) && (emac_atual < emad_atual);
 
         let direcao = null;
         let score = 0;
 
-        // Regra de COMPRA
-        const sinal_compra = ENC && 
-                             (closeAtual > emab) &&       // Acima da média de 200
-                             (emac_atual > emad_atual) && 
-                             (closeAtual > close3);       // Subiu nos últimos 3 candles
+        // Verifica a trava específica do timeframe
+        const ultimoSinal = timeframe === 'M1' ? ultimoSinalM1 : ultimoSinalM5;
 
+        // Regra de COMPRA
+        const sinal_compra = ENC && (closeAtual > emab) && (emac_atual > emad_atual) && (closeAtual > close3);
         // Regra de VENDA
-        const sinal_venda = ENV && 
-                            (closeAtual < emab) &&        // Abaixo da média de 200
-                            (emac_atual < emad_atual) && 
-                            (closeAtual < close3);        // Caiu nos últimos 3 candles
+        const sinal_venda = ENV && (closeAtual < emab) && (emac_atual < emad_atual) && (closeAtual < close3);
 
         if (sinal_venda && ultimoSinal !== -1) {
             direcao = "PUT";
             score = 95;
-            ultimoSinal = -1;
+            if (timeframe === 'M1') ultimoSinalM1 = -1; else ultimoSinalM5 = -1;
         } else if (sinal_compra && ultimoSinal !== 1) {
             direcao = "CALL";
             score = 95;
-            ultimoSinal = 1;
+            if (timeframe === 'M1') ultimoSinalM1 = 1; else ultimoSinalM5 = 1;
         } else if (!sinal_compra && !sinal_venda) {
-            ultimoSinal = 0; // Reseta a trava se não houver sinal
+            if (timeframe === 'M1') ultimoSinalM1 = 0; else ultimoSinalM5 = 0;
         }
 
         if (!direcao) return null;
@@ -148,13 +144,34 @@ async function analisarAtivoServidor(active) {
 
         return {
             ativo: active.ticker,
+            timeframe: timeframe,
             direcao: direcao,
             score: score,
             horario: horaEntrada
         };
 
     } catch (e) {
-        return null; 
+        return null;
+    }
+}
+
+// --- ANÁLISE DE ATIVO (CHAMA M1 E M5) ---
+async function analisarAtivoServidor(active) {
+    try {
+        // Roda a análise do M1 e M5 em paralelo para ser mais rápido
+        const [resultadoM1, resultadoM5] = await Promise.all([
+            analisarTimeframe(active, 'M1', 60),
+            analisarTimeframe(active, 'M5', 300)
+        ]);
+
+        // Retorna os sinais encontrados (se houver)
+        const sinais = [];
+        if (resultadoM1) sinais.push(resultadoM1);
+        if (resultadoM5) sinais.push(resultadoM5);
+        
+        return sinais.length > 0 ? sinais[0] : null; // Se achar os dois, retorna o primeiro (o sort da busca vai pegar o melhor)
+    } catch (e) {
+        return null;
     }
 }
 
