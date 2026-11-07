@@ -67,7 +67,7 @@ function calcularADX(highs, lows, closes, period = 14) {
     return { adx: dx, plusDI, minusDI };
 }
 
-// --- VARREDURA E ANÁLISE (Idêntica à Estratégia Original) ---
+// --- VARREDURA (Adaptada para Console) ---
 async function buscarAnaliseServidor() {
     if (!sdk) return;
     isBuscando = true;
@@ -77,12 +77,12 @@ async function buscarAnaliseServidor() {
         const binaryOptions = await sdk.binaryOptions();
         const actives = binaryOptions.getActives();
         
-        // Filtra apenas ativos OTC para o teste
+        // Filtra apenas ativos OTC
         let ativosFiltrados = actives.filter(a => a.ticker.includes('-OTC'));
 
         let melhoresSinais = [];
 
-        // Processa em lotes de 5 para não sobrecarregar a memória do servidor
+        // Processa em lotes de 5 para não travar a memória do servidor
         for (let i = 0; i < ativosFiltrados.length; i += 5) {
             const lote = ativosFiltrados.slice(i, i + 5);
             const resultadosLote = await Promise.all(lote.map(ativo => analisarAtivoServidor(ativo)));
@@ -93,7 +93,7 @@ async function buscarAnaliseServidor() {
             melhoresSinais.sort((a, b) => b.score - a.score);
             const campeao = melhoresSinais[0];
             
-            // IMPRIME NO CONSOLE DO RENDER (Formato idêntico ao original)
+            // IMPRIME NO CONSOLE DO RENDER
             console.log(`🏆 [SINAL ENCONTRADO] ${campeao.ativo} | ${campeao.direcao} | RSI: ${campeao.rsi} | ADX: ${campeao.adx} | Confiança: ${campeao.score}% | Hora: ${campeao.horario}`);
         } else {
             console.log("⚠️ Nenhum ativo com setup no momento. O mercado está calmo.");
@@ -127,25 +127,21 @@ async function analisarAtivoServidor(active) {
 
         let direcao = null;
         let score = 0;
-        let estrategia = "";
 
-        // --- A LÓGICA IDÊNTICA AO ORIGINAL (Trend + RSI) ---
-        // Tendência de Alta (M5) + RSI de Sobrevenda (M1)
-        if (adxM5 > 20 && plusDI_M5 > minusDI_M5 && rsiM1 < 40) {
+        // --- ESTRATÉGIA COM FILTRO MAIS SENSÍVEL ---
+        // Tendência M5 de Alta + RSI M1 abaixo de 45 (mais fácil de bater que 40)
+        if (adxM5 > 20 && plusDI_M5 > minusDI_M5 && rsiM1 < 45) {
             direcao = "CALL";
-            estrategia = "Tendência de Alta + RSI Sobrevenda";
-            score = Math.min(99, Math.floor(70 + (40 - rsiM1) + (adxM5 / 4)));
+            score = Math.min(99, Math.floor(70 + (45 - rsiM1) + (adxM5 / 4)));
         } 
-        // Tendência de Baixa (M5) + RSI de Sobrecompra (M1)
-        else if (adxM5 > 20 && minusDI_M5 > plusDI_M5 && rsiM1 > 60) {
+        // Tendência M5 de Baixa + RSI M1 acima de 55 (mais fácil de bater que 60)
+        else if (adxM5 > 20 && minusDI_M5 > plusDI_M5 && rsiM1 > 55) {
             direcao = "PUT";
-            estrategia = "Tendência de Baixa + RSI Sobrecompra";
-            score = Math.min(99, Math.floor(70 + (rsiM1 - 60) + (adxM5 / 4)));
+            score = Math.min(99, Math.floor(70 + (rsiM1 - 55) + (adxM5 / 4)));
         }
 
         if (!direcao) return null;
 
-        // Formata o horário de entrada (o início da próxima vela)
         const proximoMinuto = Math.floor(Date.now() / 60000) * 60000 + 60000;
         const horaEntrada = new Date(proximoMinuto).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
@@ -155,12 +151,11 @@ async function analisarAtivoServidor(active) {
             rsi: rsiM1.toFixed(1),
             adx: adxM5.toFixed(1),
             score: score,
-            estrategia: estrategia,
             horario: horaEntrada
         };
 
     } catch (e) {
-        return null; // Ignora erros individuais de ativos para não parar o servidor
+        return null; 
     }
 }
 
