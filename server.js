@@ -2,35 +2,37 @@ const express = require('express');
 const app = express();
 const port = process.env.PORT || 10000;
 
-// Rota de saúde para o UptimeRobot fazer o ping e manter o servidor acordado
+// Rota de saúde para o UptimeRobot
 app.get('/health', (req, res) => {
     res.status(200).send('OK');
 });
 
-// Importa a versão do bot adaptada para servidor
+// Importa o cérebro do robô
 const { iniciarBotServidor } = require('./backend/bot_servidor');
 
 // =====================================================================
-// ⚠️ COLE O SEU TOKEN DA POLARIUM AQUI ENTRE AS ASPAS PARA TESTAR LOCAL
+// ⚠️ CONFIGURAÇÃO PARA TESTE LOCAL
 // =====================================================================
-const TOKEN_MANUAL = '519feb3c9cbec623a6f7e1fa8a0a370w'; 
-// =====================================================================
+// Se você for rodar no seu PC (node server.js), preencha aqui:
+const TOKEN_MANUAL = 'COLE_SEU_TOKEN_AQUI'; 
+const TIMEFRAME_MANUAL = 'M1'; // Escolha 'M1' ou 'M5'
 
-// Se estiver no Render, ele usa a variável de ambiente. 
-// Se estiver no seu PC, ele usa o TOKEN_MANUAL que você colou acima.
+// =====================================================================
+// O Render vai usar as variáveis de ambiente. O PC usa as manuais.
+// =====================================================================
 const tokenFinal = process.env.POLARIUM_TOKEN || TOKEN_MANUAL;
+const timeframeFinal = process.env.TIMEFRAME || TIMEFRAME_MANUAL;
 
 if (!tokenFinal || tokenFinal === 'COLE_SEU_TOKEN_AQUI') {
     console.error("❌ ERRO: Token não configurado.");
-    console.error("👉 Abra o server.js e cole seu token na variável TOKEN_MANUAL para testar no PC.");
+    console.error("👉 Abra o server.js e cole seu token na variável TOKEN_MANUAL.");
 } else {
-    // Inicia o bot no modo servidor
-    iniciarBotServidor(null, tokenFinal);
+    console.log(`🚀 Iniciando com Timeframe: ${timeframeFinal}`);
+    iniciarBotServidor(null, tokenFinal, timeframeFinal);
 }
 
 // Inicia o servidor web
 app.listen(port, () => {
     console.log(`✅ Servidor NextGreen rodando na porta ${port}`);
     console.log(`🌐 Acesse http://localhost:${port}/health para verificar o status.`);
-    console.log(`⏳ Aguardando o SDK conectar...`);
 });

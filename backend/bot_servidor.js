@@ -4,27 +4,23 @@ const WS_URL = 'wss://ws.trade.polariumbroker.com/echo/websocket';
 let sdk;
 let isBuscando = false;
 
-async function iniciarBotServidor(window, tokenSsid) {
-    if (!tokenSsid) {
-        console.error("❌ ERRO: Token (POLARIUM_TOKEN) não configurado.");
-        return;
-    }
+async function iniciarBotServidor(window, tokenSsid, timeframe) {
+    if (!tokenSsid) return console.error("❌ ERRO: Token não configurado.");
 
-    console.log("⏳ Iniciando SDK no servidor...");
+    console.log(`⏳ Iniciando SDK no servidor... Estratégia isolada: ${timeframe}`);
     try {
         const sdkModule = await import('@quadcode-tech/client-sdk-js');
         const { ClientSdk, SsidAuthMethod, BinaryOptionsDirection } = sdkModule;
 
-        // Conecta na Polarium
         sdk = await ClientSdk.create(WS_URL, 82, new SsidAuthMethod(tokenSsid));
         global.BinaryOptionsDirection = BinaryOptionsDirection;
         
-        console.log("✅ SDK inicializado no servidor! Iniciando varredura contínua a cada 30s...");
+        console.log("✅ SDK inicializado! Iniciando varredura a cada 30s...");
         
-        // Inicia a busca em loop infinito (a cada 30 segundos)
+        // O loop passa o timeframe escolhido para a análise
         setInterval(async () => {
             if (!isBuscando) {
-                await buscarAnaliseServidor();
+                await buscarAnaliseServidor(timeframe);
             }
         }, 30000);
 
@@ -67,25 +63,22 @@ function calcularADX(highs, lows, closes, period = 14) {
     return { adx: dx, plusDI, minusDI };
 }
 
-// --- VARREDURA (Adaptada para Console) ---
-async function buscarAnaliseServidor() {
+// --- VARREDURA ---
+async function buscarAnaliseServidor(timeframe) {
     if (!sdk) return;
     isBuscando = true;
-    console.log(`🔎 [SERVIDOR] Iniciando varredura no mercado OTC...`);
+    console.log(`🔎 [SERVIDOR] Iniciando varredura (${timeframe}) no mercado OTC...`);
     
     try {
         const binaryOptions = await sdk.binaryOptions();
         const actives = binaryOptions.getActives();
         
-        // Filtra apenas ativos OTC
         let ativosFiltrados = actives.filter(a => a.ticker.includes('-OTC'));
-
         let melhoresSinais = [];
 
-        // Processa em lotes de 5 para não travar a memória do servidor
         for (let i = 0; i < ativosFiltrados.length; i += 5) {
             const lote = ativosFiltrados.slice(i, i + 5);
-            const resultadosLote = await Promise.all(lote.map(ativo => analisarAtivoServidor(ativo)));
+            const resultadosLote = await Promise.all(lote.map(ativo => analisarAtivoServidor(ativo, timeframe)));
             melhoresSinais = melhoresSinais.concat(resultadosLote.filter(r => r !== null));
         }
 
@@ -93,10 +86,9 @@ async function buscarAnaliseServidor() {
             melhoresSinais.sort((a, b) => b.score - a.score);
             const campeao = melhoresSinais[0];
             
-            // IMPRIME NO CONSOLE DO RENDER
-            console.log(`🏆 [SINAL ENCONTRADO] ${campeao.ativo} | ${campeao.direcao} | RSI: ${campeao.rsi} | ADX: ${campeao.adx} | Confiança: ${campeao.score}% | Hora: ${campeao.horario}`);
+            console.log(`🏆 [SINAL ENCONTRADO] ${campeao.ativo} | ${campeao.direcao} | RSI: ${campeao.rsi} | ADX: ${campeao.adx} | Score: ${campeao.score}% | Hora: ${campeao.horario}`);
         } else {
-            console.log("⚠️ Nenhum ativo com setup no momento. O mercado está calmo.");
+            console.log(`⚠️ Nenhum ativo com setup no momento (${timeframe}). Mercado calmo.`);
         }
     } catch (error) {
         console.error("❌ Erro na varredura:", error.message);
@@ -105,39 +97,35 @@ async function buscarAnaliseServidor() {
     }
 }
 
-// --- ANÁLISE DE ATIVO ---
-async function analisarAtivoServidor(active) {
+// --- ANÁLISE DE ATIVO (FOCADA NO TIMEFRAME ESCOLHIDO) ---
+async function analisarAtivoServidor(active, timeframe) {
     try {
-        // Pega os dados do gráfico M1 e M5
-        const layerM1 = await sdk.realTimeChartDataLayer(active.id, 60);
-        const candlesM1 = await layerM1.fetchAllCandles(Math.floor(Date.now() / 1000) - (15 * 60)); 
+        // Define o tamanho do candle: 60s para M1 ou 300s para M5
+        const candleSize = timeframe === 'M5' ? 300 : 60;
+        const tempoHistorico = timeframe === 'M5' ? (60 * 60) : (15 * 60); // Pega mais histórico se for M5
 
-        const layerM5 = await sdk.realTimeChartDataLayer(active.id, 300);
-        const candlesM5 = await layerM5.fetchAllCandles(Math.floor(Date.now() / 1000) - (60 * 60)); 
+        const layer = await sdk.realTimeChartDataLayer(active.id, candleSize);
+        const candles = await layer.fetchAllCandles(Math.floor(Date.now() / 1000) - tempoHistorico); 
 
-        if (!candlesM1 || candlesM1.length < 5 || !candlesM5 || candlesM5.length < 5) return null;
+        if (!candles || candles.length < 5) return null;
 
-        const closesM1 = candlesM1.map(c => c.close);
-        const closesM5 = candlesM5.map(c => c.close);
-        const highsM5 = candlesM5.map(c => c.max);
-        const lowsM5 = candlesM5.map(c => c.min);
+        const closes = candles.map(c => c.close);
+        const highs = candles.map(c => c.max);
+        const lows = candles.map(c => c.min);
 
-        const rsiM1 = calcularRSI(closesM1);
-        const { adx: adxM5, plusDI: plusDI_M5, minusDI: minusDI_M5 } = calcularADX(highsM5, lowsM5, closesM5);
+        const rsi = calcularRSI(closes);
+        const { adx, plusDI, minusDI } = calcularADX(highs, lows, closes);
 
         let direcao = null;
         let score = 0;
 
-        // --- ESTRATÉGIA COM FILTRO MAIS SENSÍVEL ---
-        // Tendência M5 de Alta + RSI M1 abaixo de 45 (mais fácil de bater que 40)
-        if (adxM5 > 20 && plusDI_M5 > minusDI_M5 && rsiM1 < 45) {
+        // Regra isolada: usa apenas os dados do timeframe escolhido
+        if (adx > 20 && plusDI > minusDI && rsi < 45) {
             direcao = "CALL";
-            score = Math.min(99, Math.floor(70 + (45 - rsiM1) + (adxM5 / 4)));
-        } 
-        // Tendência M5 de Baixa + RSI M1 acima de 55 (mais fácil de bater que 60)
-        else if (adxM5 > 20 && minusDI_M5 > plusDI_M5 && rsiM1 > 55) {
+            score = Math.min(99, Math.floor(70 + (45 - rsi) + (adx / 4)));
+        } else if (adx > 20 && minusDI > plusDI && rsi > 55) {
             direcao = "PUT";
-            score = Math.min(99, Math.floor(70 + (rsiM1 - 55) + (adxM5 / 4)));
+            score = Math.min(99, Math.floor(70 + (rsi - 55) + (adx / 4)));
         }
 
         if (!direcao) return null;
@@ -148,14 +136,14 @@ async function analisarAtivoServidor(active) {
         return {
             ativo: active.ticker,
             direcao: direcao,
-            rsi: rsiM1.toFixed(1),
-            adx: adxM5.toFixed(1),
+            rsi: rsi.toFixed(1),
+            adx: adx.toFixed(1),
             score: score,
             horario: horaEntrada
         };
 
     } catch (e) {
-        return null; 
+        return null;
     }
 }
 
