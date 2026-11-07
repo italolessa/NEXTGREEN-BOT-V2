@@ -3,6 +3,8 @@ const WS_URL = 'wss://ws.trade.polariumbroker.com/echo/websocket';
 
 let sdk;
 let isBuscando = false;
+let ultimoAtivoEnviado = null;
+let tempoUltimoEnvio = 0;
 
 async function iniciarBotServidor(window, tokenSsid) {
     if (!tokenSsid) {
@@ -19,14 +21,14 @@ async function iniciarBotServidor(window, tokenSsid) {
         sdk = await ClientSdk.create(WS_URL, 82, new SsidAuthMethod(tokenSsid));
         global.BinaryOptionsDirection = BinaryOptionsDirection;
         
-        console.log("✅ SDK inicializado no servidor! Iniciando varredura contínua...");
+        console.log("✅ SDK inicializado no servidor! Iniciando varredura contínua a cada 30s...");
         
-        // Inicia a busca em loop infinito (a cada 15 segundos para pegar os sinais rápidos)
+        // Inicia a busca em loop infinito (a cada 30 segundos)
         setInterval(async () => {
             if (!isBuscando) {
                 await buscarAnaliseServidor();
             }
-        }, 15000);
+        }, 30000);
 
     } catch (error) {
         console.error("❌ Erro ao conectar no servidor:", error.message);
@@ -67,23 +69,31 @@ function calcularADX(highs, lows, closes, period = 14) {
     return { adx: dx, plusDI, minusDI };
 }
 
-// --- NOVO: CÁLCULO DE REGRESSÃO LINEAR (O Segredo do Site) ---
+// NOVO: Regressão Linear (O segredo do site original)
 function calcularRegressao(closes) {
     let n = closes.length;
     let sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0;
-    
     for (let i = 0; i < n; i++) {
-        sumX += i;
-        sumY += closes[i];
-        sumXY += i * closes[i];
-        sumX2 += i * i;
+        sumX += i; sumY += closes[i]; sumXY += i * closes[i]; sumX2 += i * i;
     }
-    
     let slope = (n * sumXY - sumX * sumY) / (n * sumX2 - sumX * sumX);
-    return slope;
+    return slope; 
 }
 
-// --- VARREDURA (Adaptada para Console) ---
+// NOVO: Balance of Power (BOP) - Mede a força da compra vs venda
+function calcularBOP(candles) {
+    let bopSum = 0;
+    for (let i = 1; i <= 14; i++) {
+        let c = candles[candles.length - i];
+        let high = c.max, low = c.min, close = c.close, open = c.open;
+        if ((high - low) !== 0) {
+            bopSum += (close - open) / (high - low);
+        }
+    }
+    return bopSum / 14;
+}
+
+// --- VARREDURA ADAPTADA ---
 async function buscarAnaliseServidor() {
     if (!sdk) return;
     isBuscando = true;
@@ -98,7 +108,6 @@ async function buscarAnaliseServidor() {
 
         let melhoresSinais = [];
 
-        // Processa em lotes de 5
         for (let i = 0; i < ativosFiltrados.length; i += 5) {
             const lote = ativosFiltrados.slice(i, i + 5);
             const resultadosLote = await Promise.all(lote.map(ativo => analisarAtivoServidor(ativo)));
@@ -109,8 +118,16 @@ async function buscarAnaliseServidor() {
             melhoresSinais.sort((a, b) => b.score - a.score);
             const campeao = melhoresSinais[0];
             
-            // IMPRIME NO CONSOLE DO RENDER
-            console.log(`🏆 [SINAL ENCONTRADO] ${campeao.ativo} | ${campeao.direcao} | RSI: ${campeao.rsi} | ADX: ${campeao.adx} | Confiança: ${campeao.score}% | Hora: ${campeao.horario}`);
+            // --- TRAVA DE REPETIÇÃO ---
+            const agora = Date.now();
+            if (campeao.ativo === ultimoAtivoEnviado && (agora - tempoUltimoEnvio) < 60000) {
+                console.log(`⏳ [IGNORADO] ${campeao.ativo} (Aguardando fechamento da vela anterior)`);
+            } else {
+                ultimoAtivoEnviado = campeao.ativo;
+                tempoUltimoEnvio = agora;
+                
+                console.log(`🏆 [SINAL ENCONTRADO] ${campeao.ativo} | ${campeao.direcao} | RSI: ${campeao.rsi} | ADX: ${campeao.adx} | Confiança: ${campeao.score}% | Hora: ${campeao.horario}`);
+            }
         } else {
             console.log("⚠️ Nenhum ativo com setup no momento. O mercado está calmo.");
         }
@@ -121,7 +138,7 @@ async function buscarAnaliseServidor() {
     }
 }
 
-// --- ANÁLISE DE ATIVO (Com Regressão Linear) ---
+// --- ANÁLISE DE ATIVO ---
 async function analisarAtivoServidor(active) {
     try {
         const layerM1 = await sdk.realTimeChartDataLayer(active.id, 60);
@@ -135,25 +152,23 @@ async function analisarAtivoServidor(active) {
 
         const rsiM1 = calcularRSI(closesM1);
         const { adx: adxM1, plusDI: plusDI_M1, minusDI: minusDI_M1 } = calcularADX(highsM1, lowsM1, closesM1);
-        
-        // Calculando a inclinação da linha
         const slope = calcularRegressao(closesM1);
+        const bop = calcularBOP(candlesM1);
 
         let direcao = null;
         let score = 0;
 
-        // --- LÓGICA AVANÇADA ---
-        // Tendência forte (ADX > 20) + Inclinação (Regressão) + RSI
+        // --- A LÓGICA DE CONFLUÊNCIA (Baseada no site original) ---
         if (adxM1 > 20) { 
-            // Se a linha está descendo (slope negativo) e o RSI está sobrevendido -> COMPRA
-            if (slope < -0.00005 && rsiM1 < 40 && plusDI_M1 > minusDI_M1) { 
+            // SINAL DE COMPRA (CALL)
+            if (slope < 0 && rsiM1 < 45 && bop > 0.1 && plusDI_M1 > minusDI_M1) { 
                 direcao = "CALL";
-                score = Math.min(99, Math.floor(70 + (40 - rsiM1) + (adxM1 / 3)));
+                score = Math.min(99, Math.floor(75 + (45 - rsiM1) + (adxM1 / 3)));
             } 
-            // Se a linha está subindo (slope positivo) e o RSI está sobrecomprado -> VENDA
-            else if (slope > 0.00005 && rsiM1 > 60 && minusDI_M1 > plusDI_M1) { 
+            // SINAL DE VENDA (PUT)
+            else if (slope > 0 && rsiM1 > 55 && bop < -0.1 && minusDI_M1 > plusDI_M1) { 
                 direcao = "PUT";
-                score = Math.min(99, Math.floor(70 + (rsiM1 - 60) + (adxM1 / 3)));
+                score = Math.min(99, Math.floor(75 + (rsiM1 - 55) + (adxM1 / 3)));
             }
         }
 
