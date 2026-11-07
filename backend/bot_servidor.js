@@ -4,10 +4,6 @@ const WS_URL = 'wss://ws.trade.polariumbroker.com/echo/websocket';
 let sdk;
 let isBuscando = false;
 
-// Variáveis para a Trava de Repetição
-let ultimoAtivoEnviado = null;
-let tempoUltimoEnvio = 0;
-
 async function iniciarBotServidor(window, tokenSsid) {
     if (!tokenSsid) {
         console.error("❌ ERRO: Token (POLARIUM_TOKEN) não configurado.");
@@ -19,17 +15,18 @@ async function iniciarBotServidor(window, tokenSsid) {
         const sdkModule = await import('@quadcode-tech/client-sdk-js');
         const { ClientSdk, SsidAuthMethod, BinaryOptionsDirection } = sdkModule;
 
+        // Conecta na Polarium
         sdk = await ClientSdk.create(WS_URL, 82, new SsidAuthMethod(tokenSsid));
         global.BinaryOptionsDirection = BinaryOptionsDirection;
         
-        console.log("✅ SDK inicializado no servidor! Iniciando varredura contínua a cada 30s...");
+        console.log("✅ SDK inicializado no servidor! Iniciando varredura contínua...");
         
-        // Inicia o loop de varredura
+        // Inicia a busca em loop infinito (a cada 15 segundos para pegar os sinais rápidos)
         setInterval(async () => {
             if (!isBuscando) {
                 await buscarAnaliseServidor();
             }
-        }, 30000);
+        }, 15000);
 
     } catch (error) {
         console.error("❌ Erro ao conectar no servidor:", error.message);
@@ -70,7 +67,23 @@ function calcularADX(highs, lows, closes, period = 14) {
     return { adx: dx, plusDI, minusDI };
 }
 
-// --- VARREDURA (COM TRAVA DE REPETIÇÃO) ---
+// --- NOVO: CÁLCULO DE REGRESSÃO LINEAR (O Segredo do Site) ---
+function calcularRegressao(closes) {
+    let n = closes.length;
+    let sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0;
+    
+    for (let i = 0; i < n; i++) {
+        sumX += i;
+        sumY += closes[i];
+        sumXY += i * closes[i];
+        sumX2 += i * i;
+    }
+    
+    let slope = (n * sumXY - sumX * sumY) / (n * sumX2 - sumX * sumX);
+    return slope;
+}
+
+// --- VARREDURA (Adaptada para Console) ---
 async function buscarAnaliseServidor() {
     if (!sdk) return;
     isBuscando = true;
@@ -80,11 +93,12 @@ async function buscarAnaliseServidor() {
         const binaryOptions = await sdk.binaryOptions();
         const actives = binaryOptions.getActives();
         
-        // Pega todos os ativos OTC
+        // Filtra todos os ativos OTC
         let ativosFiltrados = actives.filter(a => a.ticker.includes('-OTC'));
 
         let melhoresSinais = [];
 
+        // Processa em lotes de 5
         for (let i = 0; i < ativosFiltrados.length; i += 5) {
             const lote = ativosFiltrados.slice(i, i + 5);
             const resultadosLote = await Promise.all(lote.map(ativo => analisarAtivoServidor(ativo)));
@@ -95,17 +109,8 @@ async function buscarAnaliseServidor() {
             melhoresSinais.sort((a, b) => b.score - a.score);
             const campeao = melhoresSinais[0];
             
-            // --- TRAVA DE REPETIÇÃO ---
-            const agora = Date.now();
-            // Se for o mesmo ativo e passou menos de 60 segundos, ignora
-            if (campeao.ativo === ultimoAtivoEnviado && (agora - tempoUltimoEnvio) < 60000) {
-                console.log(`⏳ [IGNORADO] ${campeao.ativo} (Aguardando próxima vela)`);
-            } else {
-                ultimoAtivoEnviado = campeao.ativo;
-                tempoUltimoEnvio = agora;
-                
-                console.log(`🏆 [SINAL ENCONTRADO] ${campeao.ativo} | ${campeao.direcao} | RSI: ${campeao.rsi} | ADX: ${campeao.adx} | Confiança: ${campeao.score}% | Hora: ${campeao.horario}`);
-            }
+            // IMPRIME NO CONSOLE DO RENDER
+            console.log(`🏆 [SINAL ENCONTRADO] ${campeao.ativo} | ${campeao.direcao} | RSI: ${campeao.rsi} | ADX: ${campeao.adx} | Confiança: ${campeao.score}% | Hora: ${campeao.horario}`);
         } else {
             console.log("⚠️ Nenhum ativo com setup no momento. O mercado está calmo.");
         }
@@ -116,13 +121,13 @@ async function buscarAnaliseServidor() {
     }
 }
 
-// --- ANÁLISE DE ATIVO (REGRA ESTRITA) ---
+// --- ANÁLISE DE ATIVO (Com Regressão Linear) ---
 async function analisarAtivoServidor(active) {
     try {
         const layerM1 = await sdk.realTimeChartDataLayer(active.id, 60);
         const candlesM1 = await layerM1.fetchAllCandles(Math.floor(Date.now() / 1000) - (15 * 60)); 
 
-        if (!candlesM1 || candlesM1.length < 5) return null;
+        if (!candlesM1 || candlesM1.length < 15) return null;
 
         const closesM1 = candlesM1.map(c => c.close);
         const highsM1 = candlesM1.map(c => c.max);
@@ -130,19 +135,25 @@ async function analisarAtivoServidor(active) {
 
         const rsiM1 = calcularRSI(closesM1);
         const { adx: adxM1, plusDI: plusDI_M1, minusDI: minusDI_M1 } = calcularADX(highsM1, lowsM1, closesM1);
+        
+        // Calculando a inclinação da linha
+        const slope = calcularRegressao(closesM1);
 
         let direcao = null;
         let score = 0;
 
-        // Regra do Site: RSI extremo + Tendência Forte
-        if (adxM1 > 20) {
-            if (rsiM1 < 30 && plusDI_M1 > minusDI_M1) { 
+        // --- LÓGICA AVANÇADA ---
+        // Tendência forte (ADX > 20) + Inclinação (Regressão) + RSI
+        if (adxM1 > 20) { 
+            // Se a linha está descendo (slope negativo) e o RSI está sobrevendido -> COMPRA
+            if (slope < -0.00005 && rsiM1 < 40 && plusDI_M1 > minusDI_M1) { 
                 direcao = "CALL";
-                score = Math.min(99, Math.floor(70 + (30 - rsiM1) + (adxM1 / 3)));
+                score = Math.min(99, Math.floor(70 + (40 - rsiM1) + (adxM1 / 3)));
             } 
-            else if (rsiM1 > 70 && minusDI_M1 > plusDI_M1) { 
+            // Se a linha está subindo (slope positivo) e o RSI está sobrecomprado -> VENDA
+            else if (slope > 0.00005 && rsiM1 > 60 && minusDI_M1 > plusDI_M1) { 
                 direcao = "PUT";
-                score = Math.min(99, Math.floor(70 + (rsiM1 - 70) + (adxM1 / 3)));
+                score = Math.min(99, Math.floor(70 + (rsiM1 - 60) + (adxM1 / 3)));
             }
         }
 
