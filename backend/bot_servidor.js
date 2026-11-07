@@ -71,18 +71,18 @@ function calcularADX(highs, lows, closes, period = 14) {
 async function buscarAnaliseServidor() {
     if (!sdk) return;
     isBuscando = true;
-    console.log(`🔎 [SERVIDOR] Iniciando varredura no mercado OTC...`);
+    console.log(`🔎 [SERVIDOR] Iniciando varredura em TODOS os ativos OTC...`);
     
     try {
         const binaryOptions = await sdk.binaryOptions();
         const actives = binaryOptions.getActives();
         
-        // COPIA DO SITE: Filtra TODOS os ativos OTC, sem restringir a EUR/USD, etc.
+        // Agora pega TODOS os ativos OTC, sem filtrar apenas os principais (inclui AUDJPY, USDTHB, etc.)
         let ativosFiltrados = actives.filter(a => a.ticker.includes('-OTC'));
 
         let melhoresSinais = [];
 
-        // Processa em lotes de 5 para não travar a memória
+        // Processa em lotes de 5 para não estourar a memória do Render
         for (let i = 0; i < ativosFiltrados.length; i += 5) {
             const lote = ativosFiltrados.slice(i, i + 5);
             const resultadosLote = await Promise.all(lote.map(ativo => analisarAtivoServidor(ativo)));
@@ -105,10 +105,10 @@ async function buscarAnaliseServidor() {
     }
 }
 
-// --- ANÁLISE DE ATIVO (LÓGICA DO SITE) ---
+// --- ANÁLISE DE ATIVO (A FÓRMULA DO SITE) ---
 async function analisarAtivoServidor(active) {
     try {
-        // Pega os dados do gráfico M1 puro
+        // Pega os dados do gráfico M1
         const layerM1 = await sdk.realTimeChartDataLayer(active.id, 60);
         const candlesM1 = await layerM1.fetchAllCandles(Math.floor(Date.now() / 1000) - (15 * 60)); 
 
@@ -124,18 +124,17 @@ async function analisarAtivoServidor(active) {
         let direcao = null;
         let score = 0;
 
-        // --- A REGRA EXATA DO SITE ---
-        // O site usa RSI um pouco mais flexível (40/60) e ADX acima de 20.
-        if (adxM1 > 20) {
+        // --- A LÓGICA EXATA DO SITE (BASEADA NOS SEUS PRINTS) ---
+        // Exige uma tendência de ADX > 20 e o RSI nos extremos (<40 ou >60)
+        if (adxM1 > 20) { 
             if (rsiM1 < 40 && plusDI_M1 > minusDI_M1) { 
-                // Sobrevenda no M1
                 direcao = "CALL";
-                score = Math.min(99, Math.floor(70 + (40 - rsiM1) + (adxM1 / 4)));
+                // Fórmula ajustada para chegar perto dos 83% a 96% que eles mostram
+                score = Math.min(99, Math.floor(70 + (40 - rsiM1) + (adxM1 / 3)));
             } 
             else if (rsiM1 > 60 && minusDI_M1 > plusDI_M1) { 
-                // Sobrecompra no M1
                 direcao = "PUT";
-                score = Math.min(99, Math.floor(70 + (rsiM1 - 60) + (adxM1 / 4)));
+                score = Math.min(99, Math.floor(70 + (rsiM1 - 60) + (adxM1 / 3)));
             }
         }
 
@@ -154,7 +153,7 @@ async function analisarAtivoServidor(active) {
         };
 
     } catch (e) {
-        return null; 
+        return null; // Ignora erros individuais de ativos para não parar o servidor
     }
 }
 
