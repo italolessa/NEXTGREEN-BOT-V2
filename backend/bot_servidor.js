@@ -1,10 +1,18 @@
+// --- URL CORRETA E ESTÁVEL DA POLARIUM ---
 const WS_URL = 'wss://ws.trade.polariumbroker.com/echo/websocket'; 
 
 let sdk;
 let isBuscando = false;
 
+// Variáveis para a Trava de Repetição
+let ultimoAtivoEnviado = null;
+let tempoUltimoEnvio = 0;
+
 async function iniciarBotServidor(window, tokenSsid) {
-    if (!tokenSsid) return console.error("❌ ERRO: Token não configurado.");
+    if (!tokenSsid) {
+        console.error("❌ ERRO: Token (POLARIUM_TOKEN) não configurado.");
+        return;
+    }
 
     console.log("⏳ Iniciando SDK no servidor...");
     try {
@@ -16,7 +24,7 @@ async function iniciarBotServidor(window, tokenSsid) {
         
         console.log("✅ SDK inicializado no servidor! Iniciando varredura contínua a cada 30s...");
         
-        // Inicia a busca em loop infinito (a cada 30 segundos)
+        // Inicia o loop de varredura
         setInterval(async () => {
             if (!isBuscando) {
                 await buscarAnaliseServidor();
@@ -62,7 +70,7 @@ function calcularADX(highs, lows, closes, period = 14) {
     return { adx: dx, plusDI, minusDI };
 }
 
-// --- VARREDURA (Adaptada para Console) ---
+// --- VARREDURA (COM TRAVA DE REPETIÇÃO) ---
 async function buscarAnaliseServidor() {
     if (!sdk) return;
     isBuscando = true;
@@ -72,12 +80,11 @@ async function buscarAnaliseServidor() {
         const binaryOptions = await sdk.binaryOptions();
         const actives = binaryOptions.getActives();
         
-        // Filtra apenas ativos OTC
+        // Pega todos os ativos OTC
         let ativosFiltrados = actives.filter(a => a.ticker.includes('-OTC'));
 
         let melhoresSinais = [];
 
-        // Processa em lotes de 5
         for (let i = 0; i < ativosFiltrados.length; i += 5) {
             const lote = ativosFiltrados.slice(i, i + 5);
             const resultadosLote = await Promise.all(lote.map(ativo => analisarAtivoServidor(ativo)));
@@ -85,11 +92,20 @@ async function buscarAnaliseServidor() {
         }
 
         if (melhoresSinais.length > 0) {
-            // Pega o primeiro que achou para o log não lotar
-            const campeao = melhoresSinais[0]; 
+            melhoresSinais.sort((a, b) => b.score - a.score);
+            const campeao = melhoresSinais[0];
             
-            // IMPRIME NO CONSOLE DO RENDER
-            console.log(`🏆 [SINAL ENCONTRADO] ${campeao.ativo} | ${campeao.direcao} | RSI: ${campeao.rsi} | ADX: ${campeao.adx} | Confiança: ${campeao.score}% | Hora: ${campeao.horario}`);
+            // --- TRAVA DE REPETIÇÃO ---
+            const agora = Date.now();
+            // Se for o mesmo ativo e passou menos de 60 segundos, ignora
+            if (campeao.ativo === ultimoAtivoEnviado && (agora - tempoUltimoEnvio) < 60000) {
+                console.log(`⏳ [IGNORADO] ${campeao.ativo} (Aguardando próxima vela)`);
+            } else {
+                ultimoAtivoEnviado = campeao.ativo;
+                tempoUltimoEnvio = agora;
+                
+                console.log(`🏆 [SINAL ENCONTRADO] ${campeao.ativo} | ${campeao.direcao} | RSI: ${campeao.rsi} | ADX: ${campeao.adx} | Confiança: ${campeao.score}% | Hora: ${campeao.horario}`);
+            }
         } else {
             console.log("⚠️ Nenhum ativo com setup no momento. O mercado está calmo.");
         }
@@ -100,10 +116,9 @@ async function buscarAnaliseServidor() {
     }
 }
 
-// --- ANÁLISE DE ATIVO (MODO DE TESTE) ---
+// --- ANÁLISE DE ATIVO (REGRA ESTRITA) ---
 async function analisarAtivoServidor(active) {
     try {
-        // Pega os dados do gráfico M1
         const layerM1 = await sdk.realTimeChartDataLayer(active.id, 60);
         const candlesM1 = await layerM1.fetchAllCandles(Math.floor(Date.now() / 1000) - (15 * 60)); 
 
@@ -116,17 +131,22 @@ async function analisarAtivoServidor(active) {
         const rsiM1 = calcularRSI(closesM1);
         const { adx: adxM1, plusDI: plusDI_M1, minusDI: minusDI_M1 } = calcularADX(highsM1, lowsM1, closesM1);
 
-        // --- MODO DE TESTE (FILTROS ZERADOS) ---
-        // Ele vai gerar um sinal para QUALQUER ativo que tenha RSI < 50 (CALL) ou RSI > 50 (PUT)
         let direcao = null;
-        if (rsiM1 < 50) {
-            direcao = "CALL";
-        } else {
-            direcao = "PUT";
+        let score = 0;
+
+        // Regra do Site: RSI extremo + Tendência Forte
+        if (adxM1 > 20) {
+            if (rsiM1 < 30 && plusDI_M1 > minusDI_M1) { 
+                direcao = "CALL";
+                score = Math.min(99, Math.floor(70 + (30 - rsiM1) + (adxM1 / 3)));
+            } 
+            else if (rsiM1 > 70 && minusDI_M1 > plusDI_M1) { 
+                direcao = "PUT";
+                score = Math.min(99, Math.floor(70 + (rsiM1 - 70) + (adxM1 / 3)));
+            }
         }
 
-        // O Score será apenas uma simulação visual
-        const score = Math.floor(60 + Math.random() * 30);
+        if (!direcao) return null;
 
         const proximoMinuto = Math.floor(Date.now() / 60000) * 60000 + 60000;
         const horaEntrada = new Date(proximoMinuto).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
@@ -141,7 +161,7 @@ async function analisarAtivoServidor(active) {
         };
 
     } catch (e) {
-        return null; // Ignora erros individuais de ativos para não parar o servidor
+        return null; 
     }
 }
 
