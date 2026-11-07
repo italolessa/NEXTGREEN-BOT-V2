@@ -2,13 +2,14 @@ const WS_URL = 'wss://ws.trade.polariumbroker.com/echo/websocket';
 
 let sdk;
 let isBuscando = false;
+let ultimoSinal = 0; // Trava: 1 = Compra, -1 = Venda, 0 = Neutro
 let ultimoAtivoEnviado = null;
 let tempoUltimoEnvio = 0;
 
 async function iniciarBotServidor(window, tokenSsid) {
     if (!tokenSsid) return console.error("❌ Token não configurado.");
 
-    console.log("⏳ Iniciando SDK no servidor (Modo Ultimate)...");
+    console.log("⏳ Iniciando SDK no servidor...");
     try {
         const sdkModule = await import('@quadcode-tech/client-sdk-js');
         const { ClientSdk, SsidAuthMethod, BinaryOptionsDirection } = sdkModule;
@@ -16,7 +17,7 @@ async function iniciarBotServidor(window, tokenSsid) {
         sdk = await ClientSdk.create(WS_URL, 82, new SsidAuthMethod(tokenSsid));
         global.BinaryOptionsDirection = BinaryOptionsDirection;
         
-        console.log("✅ SDK inicializado! Iniciando Estratégias Combinadas...");
+        console.log("✅ SDK inicializado! Iniciando Estratégia NextGreen Original (EMAs)...");
         
         // Roda a cada 30 segundos
         setInterval(async () => {
@@ -30,7 +31,7 @@ async function iniciarBotServidor(window, tokenSsid) {
     }
 }
 
-// --- MATEMÁTICA DOS INDICADORES ---
+// --- MATEMÁTICA DAS MÉDIAS MÓVEIS EXPONENCIAIS (EMA) ---
 function calcularEMA(dados, period) {
     if (dados.length < period) return dados[dados.length - 1];
     const k = 2 / (period + 1);
@@ -41,23 +42,18 @@ function calcularEMA(dados, period) {
     return ema;
 }
 
-function calcularSMA(dados, period) {
-    if (dados.length < period) return 0;
-    const slice = dados.slice(-period);
-    return slice.reduce((a, b) => a + b, 0) / period;
-}
-
 // --- VARREDURA ---
 async function buscarAnaliseServidor() {
     if (!sdk) return;
     isBuscando = true;
-    console.log(`🔎 [SERVIDOR] Buscando confluência (EMA + Engolfo + Volume)...`);
+    console.log(`🔎 [SERVIDOR] Buscando cruzamento de EMAs no mercado OTC...`);
     
     try {
         const binaryOptions = await sdk.binaryOptions();
         const actives = binaryOptions.getActives();
         
         let ativosFiltrados = actives.filter(a => a.ticker.includes('-OTC'));
+
         let melhoresSinais = [];
 
         for (let i = 0; i < ativosFiltrados.length; i += 5) {
@@ -67,19 +63,19 @@ async function buscarAnaliseServidor() {
         }
 
         if (melhoresSinais.length > 0) {
-            melhoresSinais.sort((a, b) => b.score - a.score);
             const campeao = melhoresSinais[0];
-            
             const agora = Date.now();
+            
+            // Trava para não ficar repetindo o mesmo sinal na mesma vela
             if (campeao.ativo === ultimoAtivoEnviado && (agora - tempoUltimoEnvio) < 60000) {
                 console.log(`⏳ [IGNORADO] ${campeao.ativo} (Aguardando nova vela)`);
             } else {
                 ultimoAtivoEnviado = campeao.ativo;
                 tempoUltimoEnvio = agora;
-                console.log(`🏆 [SINAL ULTIMATE] ${campeao.ativo} | ${campeao.direcao} | Confiança: ${campeao.score}% | Estratégia: ${campeao.estrategia} | Hora: ${campeao.horario}`);
+                console.log(`🏆 [SINAL ESTRATÉGIA ORIGINAL] ${campeao.ativo} | ${campeao.direcao} | Confiança: ${campeao.score}% | Hora: ${campeao.horario}`);
             }
         } else {
-            console.log("⚠️ Nenhuma confluência forte encontrada no momento.");
+            console.log("⚠️ Nenhum cruzamento de EMA válido no momento.");
         }
     } catch (error) {
         console.error("❌ Erro na varredura:", error.message);
@@ -88,73 +84,64 @@ async function buscarAnaliseServidor() {
     }
 }
 
-// --- ANÁLISE DE ATIVO (A FUSÃO DAS ESTRATÉGIAS) ---
+// --- ANÁLISE COM A ESTRATÉGIA EXATA DO ARQUIVO ---
 async function analisarAtivoServidor(active) {
     try {
         const layerM1 = await sdk.realTimeChartDataLayer(active.id, 60);
-        // Pega 250 candles para as médias longas
-        const candles = await layerM1.fetchAllCandles(Math.floor(Date.now() / 1000) - (250 * 60)); 
+        // Pega 250 candles para calcular a EMA de 200 e os últimos movimentos
+        const candlesM1 = await layerM1.fetchAllCandles(Math.floor(Date.now() / 1000) - (250 * 60)); 
 
-        if (!candles || candles.length < 210) return null;
+        if (!candlesM1 || candlesM1.length < 210) return null;
 
-        const closes = candles.map(c => c.close);
-        const opens = candles.map(c => c.open);
-        const highs = candles.map(c => c.max);
-        const lows = candles.map(c => c.min);
-        const volumes = candles.map(c => c.volume);
-        const hlc3 = candles.map(c => (c.max + c.min + c.close) / 3);
+        const closes = candlesM1.map(c => c.close);
+        const highs = candlesM1.map(c => c.max);
+        const lows = candlesM1.map(c => c.min);
+        
+        // HLC3 = (High + Low + Close) / 3
+        const hlc3 = candlesM1.map(c => (c.max + c.min + c.close) / 3);
 
-        const atual = candles[candles.length - 1];
-        const anterior = candles[candles.length - 2];
-        const close3 = closes[closes.length - 4];
+        const closeAtual = closes[closes.length - 1];
+        const close3 = closes[closes.length - 4]; // Preço de 3 velas atrás
 
-        // --- 1. INDICADORES DA ESTRATÉGIA DE TENDÊNCIA (EMA) ---
-        const emaa = calcularEMA(closes, 21);
-        const emab = calcularEMA(closes, 200);
+        // Cálculo das EMAs
+        const emaa_atual = calcularEMA(closes, 21);
+        const emab = calcularEMA(closes, 200); // Tendência Macro
         const emac_atual = calcularEMA(hlc3, 14);
         const emad_atual = calcularEMA(hlc3, 34);
-        const emac_ant = calcularEMA(hlc3.slice(0, -1), 14);
-        const emad_ant = calcularEMA(hlc3.slice(0, -1), 34);
-
-        const ENC = (emac_ant < emad_ant) && (emac_atual > emad_atual);
-        const ENV = (emac_ant > emad_ant) && (emac_atual < emad_atual);
-
-        // --- 2. INDICADORES DA ESTRATÉGIA WYCKOFF/ENGOLFO ---
-        const ma9 = calcularSMA(closes, 9);
-        const ma21 = calcularSMA(closes, 21);
         
-        // Engolfo de Alta: Vela anterior vermelha, atual verde e fecha acima da máxima da anterior
-        const engolfo_alta = (atual.close > atual.open) && (anterior.close < anterior.open) && (atual.close > anterior.max);
-        // Engolfo de Baixa: Vela anterior verde, atual vermelha e fecha abaixo da mínima da anterior
-        const engolfo_baixa = (atual.close < atual.open) && (anterior.close > anterior.open) && (atual.close < anterior.min);
+        // EMAs do candle anterior para verificar o cruzamento
+        const emac_anterior = calcularEMA(hlc3.slice(0, -1), 14);
+        const emad_anterior = calcularEMA(hlc3.slice(0, -1), 34);
 
-        // --- 3. INDICADOR DE VOLUME (EFRAIM) ---
-        // Média de volume das últimas 10 velas (excluindo a atual)
-        const volumeMedio = calcularSMA(volumes.slice(0, -1), 10);
-        const volumeForte = atual.volume > (volumeMedio * 1.2); // Volume 20% acima da média
+        // Condições de Cruzamento (O gatilho da estratégia)
+        const ENC = (emac_anterior < emad_anterior) && (emac_atual > emad_atual);
+        const ENV = (emac_anterior > emad_anterior) && (emac_atual < emad_atual);
 
         let direcao = null;
         let score = 0;
-        let estrategiaFinal = "";
 
-        // --- CONFLUÊNCIA DE ALTA (COMPRA) ---
-        const tendenciaAlta = ENC && (atual.close > emab) && (emac_atual > emad_atual) && (atual.close > close3);
-        const reversaoAlta = engolfo_alta && (ma9 > ma21);
+        // Regra de COMPRA
+        const sinal_compra = ENC && 
+                             (closeAtual > emab) &&       // Acima da média de 200
+                             (emac_atual > emad_atual) && 
+                             (closeAtual > close3);       // Subiu nos últimos 3 candles
 
-        if (tendenciaAlta && reversaoAlta && volumeForte) {
-            direcao = "CALL";
-            score = 98;
-            estrategiaFinal = "EMA + Engolfo + Wyckoff + Volume";
-        }
+        // Regra de VENDA
+        const sinal_venda = ENV && 
+                            (closeAtual < emab) &&        // Abaixo da média de 200
+                            (emac_atual < emad_atual) && 
+                            (closeAtual < close3);        // Caiu nos últimos 3 candles
 
-        // --- CONFLUÊNCIA DE BAIXA (VENDA) ---
-        const tendenciaBaixa = ENV && (atual.close < emab) && (emac_atual < emad_atual) && (atual.close < close3);
-        const reversaoBaixa = engolfo_baixa && (ma9 < ma21);
-
-        if (tendenciaBaixa && reversaoBaixa && volumeForte) {
+        if (sinal_venda && ultimoSinal !== -1) {
             direcao = "PUT";
-            score = 98;
-            estrategiaFinal = "EMA + Engolfo + Wyckoff + Volume";
+            score = 95;
+            ultimoSinal = -1;
+        } else if (sinal_compra && ultimoSinal !== 1) {
+            direcao = "CALL";
+            score = 95;
+            ultimoSinal = 1;
+        } else if (!sinal_compra && !sinal_venda) {
+            ultimoSinal = 0; // Reseta a trava se não houver sinal
         }
 
         if (!direcao) return null;
@@ -165,8 +152,9 @@ async function analisarAtivoServidor(active) {
         return {
             ativo: active.ticker,
             direcao: direcao,
+            rsi: 0, // Não usado nesta estratégia
+            adx: 0, // Não usado nesta estratégia
             score: score,
-            estrategia: estrategiaFinal,
             horario: horaEntrada
         };
 
