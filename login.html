@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <title>NextGreen - Login</title>
+    <style>
+        body { background-color: #0a0a0a; color: white; font-family: 'Segoe UI', sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+        .login-card { background: #121212; border: 1px solid #222; border-radius: 12px; padding: 40px; width: 380px; text-align: center; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+        .logo { font-size: 32px; font-weight: 900; margin-bottom: 10px; }
+        .logo span { color: #12EF52; }
+        .subtitle { color: #888; font-size: 14px; margin-bottom: 30px; }
+        
+        input[type="email"], input[type="password"] { width: 100%; padding: 12px; margin-bottom: 15px; border-radius: 8px; border: 1px solid #333; background: #0a0a0a; color: white; box-sizing: border-box; }
+        input:focus { outline: none; border-color: #12EF52; }
+        
+        .checkbox-container { display: flex; align-items: center; justify-content: flex-start; gap: 8px; margin-bottom: 20px; color: #aaa; font-size: 13px; cursor: pointer; }
+        .checkbox-container input { accent-color: #12EF52; width: 16px; height: 16px; cursor: pointer; }
+
+        .btn-login { width: 100%; padding: 14px; background: #12EF52; color: black; font-weight: bold; border: none; border-radius: 8px; font-size: 16px; cursor: pointer; transition: 0.2s; }
+        .btn-login:hover { filter: brightness(1.1); }
+        
+        .btn-auto { width: 100%; padding: 14px; background: transparent; color: #12EF52; font-weight: bold; border: 2px solid #12EF52; border-radius: 8px; font-size: 16px; cursor: pointer; display: none; margin-bottom: 15px; transition: 0.2s; }
+        .btn-auto:hover { background: rgba(18, 239, 82, 0.1); }
+
+        .divider { color: #444; font-size: 12px; margin: 15px 0; display: none; }
+    </style>
+</head>
+<body>
+    <div class="login-card">
+        <div class="logo">⚡ NEXT<span>GREEN</span></div>
+        <div class="subtitle">Conecte sua conta para iniciar o scanner</div>
+
+        <!-- Botão de Auto-Login -->
+        <button class="btn-auto" id="btn-auto" onclick="loginAutomatico()">🚀 Entrar Automaticamente</button>
+        <div class="divider" id="divider">OU FAÇA LOGIN MANUAL</div>
+
+        <input type="email" id="email" placeholder="Seu e-mail da Polarium">
+        <input type="password" id="senha" placeholder="Sua senha (necessário apenas 1ª vez)">
+        
+        <label class="checkbox-container">
+            <input type="checkbox" id="lembrar">
+            Salvar meus dados neste PC
+        </label>
+
+        <button class="btn-login" onclick="iniciarLogin()">Fazer Login na Polarium</button>
+    </div>
+
+    <script>
+        // Pergunta ao backend se existe token salvo e mostra/esconde o botão
+        window.api.verificarLoginSalvo((temLogin) => {
+            const btnAuto = document.getElementById('btn-auto');
+            const divider = document.getElementById('divider');
+            
+            if (temLogin) {
+                btnAuto.style.display = 'block';
+                divider.style.display = 'block';
+            } else {
+                btnAuto.style.display = 'none'; // GARANTE QUE O BOTÃO SUMA
+                divider.style.display = 'none';
+            }
+        });
+
+        function iniciarLogin() {
+            const email = document.getElementById('email').value;
+            const senha = document.getElementById('senha').value;
+            const lembrar = document.getElementById('lembrar').checked;
+            
+            if (!email || !senha) {
+                alert("Preencha o e-mail e a senha para continuar.");
+                return;
+            }
+
+            window.api.iniciarLogin({ email, senha, lembrar });
+        }
+
+        function loginAutomatico() {
+            window.api.fazerLoginSalvo();
+        }
+    </script>
+</body>
+</html>

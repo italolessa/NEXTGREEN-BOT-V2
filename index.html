@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <title>NEXTGREEN - Scanner de Mercado</title>
+    <style>
+        :root { --bg: #0a0a0a; --card: #121212; --border: #222; --green: #12EF52; --dark-green: #003300; --red: #ff3333; }
+        body { background-color: var(--bg); color: white; font-family: 'Segoe UI', sans-serif; margin: 0; padding: 0; display: flex; height: 100vh; overflow: hidden; }
+        
+        .sidebar { width: 260px; background: #0d0d0d; border-right: 1px solid var(--border); padding: 20px; display: flex; flex-direction: column; flex-shrink: 0; }
+        .logo { display: flex; align-items: center; gap: 10px; font-weight: 900; font-size: 20px; margin-bottom: 30px; color: white; letter-spacing: -1px; }
+        .logo span { color: var(--green); }
+        
+        .menu-item { display: flex; align-items: center; gap: 10px; padding: 12px; color: #888; text-decoration: none; border-radius: 8px; font-size: 14px; margin-bottom: 5px; transition: 0.2s; cursor: pointer; }
+        .menu-item:hover, .menu-item.active { background: rgba(18, 239, 82, 0.1); color: var(--green); font-weight: bold; }
+        .logout-btn { margin-top: auto; color: var(--red) !important; border: 1px solid transparent; }
+        .logout-btn:hover { background: rgba(255, 51, 51, 0.1); border-color: var(--red); }
+
+        .main-content { flex: 1; padding: 30px; display: flex; flex-direction: column; overflow-y: auto; background: radial-gradient(circle at top right, #0a1a10, #0a0a0a); }
+        .top-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; border-bottom: 1px solid var(--border); padding-bottom: 15px; }
+        .status-badge { color: var(--green); font-size: 12px; border: 1px solid var(--green); padding: 5px 10px; border-radius: 20px; display: flex; align-items: center; gap: 5px; }
+        .status-badge::before { content: ''; width: 6px; height: 6px; background: var(--green); border-radius: 50%; }
+
+        .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 30px; max-width: 1400px; margin: 0 auto; width: 100%; }
+        .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 25px; }
+        .card-title { font-size: 16px; color: #888; margin-bottom: 20px; display: flex; align-items: center; gap: 8px; }
+        
+        .btn-green { background: var(--green); color: black; font-weight: bold; border: none; border-radius: 8px; padding: 15px; cursor: pointer; width: 100%; font-size: 16px; transition: 0.2s; }
+        .btn-green:hover { filter: brightness(1.2); }
+
+        #area-sinal { display: none; }
+        .sinal-box { background: rgba(255, 51, 51, 0.1); border: 1px solid var(--red); color: var(--red); text-align: center; padding: 30px; border-radius: 12px; font-size: 32px; font-weight: 900; letter-spacing: 2px; margin-bottom: 20px; }
+        .sinal-box.compra { background: rgba(18, 239, 82, 0.1); border-color: var(--green); color: var(--green); }
+        
+        .data-row { display: flex; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid #222; font-size: 15px; }
+        .data-row span:last-child { font-weight: bold; color: white; }
+        
+        .loader-container { display: none; text-align: center; padding: 50px; }
+        .loader { border: 4px solid #222; border-top: 4px solid var(--green); border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 0 auto 15px auto; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+    <div class="sidebar">
+        <div class="logo">⚡ NEXT<span>GREEN</span></div>
+        <div class="menu-item active">📊 Gerador de Sinais</div>
+        <div class="menu-item">🤖 AutoPilot (V2)</div>
+        <div class="menu-item">📈 Dashboard (V2)</div>
+        <div class="menu-item logout-btn" onclick="fazerLogout()">🚪 Sair da Conta</div>
+    </div>
+
+    <div class="main-content">
+        <div class="top-bar">
+            <div style="font-size: 22px; font-weight: bold;">Scanner de Mercado (IA)</div>
+            <div class="status-badge">Polarium Online</div>
+        </div>
+
+        <div class="grid-2">
+            <div class="card">
+                <div class="card-title">⚙️ Configurações da Análise</div>
+                <p style="font-size: 14px; color: #aaa; margin-bottom: 25px;">Selecione o timeframe e o mercado. Se demorar a achar, clique em "Parar" para relaxar os filtros.</p>
+                
+                <div style="display: flex; gap: 10px; margin-bottom: 20px;">
+                    <button class="btn-green" style="background: #222; color: var(--green); border: 1px solid var(--green);" id="btn-tf-m1" onclick="setConfig('timeframe', 'M1', 'btn-tf-m1', 'btn-tf-m5')">M1 (1 min)</button>
+                    <button class="btn-green" style="background: #222; color: #888; border: 1px solid #444;" id="btn-tf-m5" onclick="setConfig('timeframe', 'M5', 'btn-tf-m5', 'btn-tf-m1')">M5 (5 min)</button>
+                </div>
+
+                <div style="display: flex; gap: 10px; margin-bottom: 30px;">
+                    <button class="btn-green" style="background: #222; color: var(--green); border: 1px solid var(--green);" id="btn-mercado-otc" onclick="setConfig('mercado', 'OTC', 'btn-mercado-otc', 'btn-mercado-aberto')">Mercado OTC</button>
+                    <button class="btn-green" style="background: #222; color: #888; border: 1px solid #444;" id="btn-mercado-aberto" onclick="setConfig('mercado', 'ABERTO', 'btn-mercado-aberto', 'btn-mercado-otc')">Mercado Aberto</button>
+                </div>
+
+                <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                    <button class="btn-green" onclick="solicitarBusca()" id="btn-buscar" style="flex: 1; min-width: 150px;">🔍 Buscar Ativo</button>
+                    <button class="btn-green" style="background: #3f1d1d; color: #ff3333; border: 1px solid #ff3333; display: none; width: 100px;" onclick="pararBusca()" id="btn-parar">🛑 Parar</button>
+                    <button class="btn-green" style="background: #222; color: #aaa; border: 1px solid #444; width: 100%;" onclick="novaBuscaLimpa()" id="btn-limpar">🧹 Resetar Filtros</button>
+                </div>
+            </div>
+
+            <div class="card" id="card-resultado">
+                <div class="card-title">📡 Motor Técnico NextGreen</div>
+                
+                <div class="loader-container" id="loader">
+                    <div class="loader"></div>
+                    <div style="color: var(--green); font-weight: bold;">Escaneando estruturas do mercado...</div>
+                </div>
+
+                <div id="msg-inicial" style="text-align: center; padding: 50px 0; color: #666;">
+                    Clique em "Buscar Ativo" para iniciar a varredura.
+                </div>
+
+                <div id="area-sinal">
+                    <div class="sinal-box" id="box-direcao">📉 VENDA</div>
+                    <div class="data-row"><span>Ativo:</span> <span id="res-ativo">-</span></div>
+                    <div class="data-row"><span>Timeframe:</span> <span id="res-tf">-</span></div>
+                    <div class="data-row"><span>Estratégia:</span> <span id="res-estrategia" style="color: var(--green);">-</span></div>
+                    <div class="data-row"><span>RSI:</span> <span id="res-rsi">-</span></div>
+                    <div class="data-row"><span>ADX (Tendência):</span> <span id="res-adx">-</span></div>
+                    <div class="data-row"><span>Confiança:</span> <span id="res-conf" style="color: var(--green);">-</span></div>
+                    <div class="data-row"><span>Horário:</span> <span id="res-hora">-</span></div>
+                    <button class="btn-green" style="margin-top: 20px;" onclick="aprovarSinal()">✅ Aprovar Sinal</button>
+                </div>
+            </div>
+
+            <!-- Card do Histórico -->
+            <div class="card" style="grid-column: span 2; margin-top: 10px;">
+                <div class="card-title" style="display: flex; justify-content: space-between; align-items: center;">
+                    <span>📜 Histórico de Sinais (Últimos 50)</span>
+                    <button class="btn-green" style="width: auto; padding: 5px 15px; font-size: 12px; background: #3f1d1d; color: #ff3333; border: 1px solid #ff3333;" onclick="limparHistorico()">🗑️ Limpar Histórico</button>
+                </div>
+                <div id="lista-historico" style="max-height: 200px; overflow-y: auto; font-size: 13px; color: #aaa; display: flex; flex-direction: column; gap: 5px;">
+                    Carregando histórico...
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
