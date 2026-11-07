@@ -52,6 +52,7 @@ async function buscarAnaliseServidor() {
         const binaryOptions = await sdk.binaryOptions();
         const actives = binaryOptions.getActives();
         
+        // Filtra todos os ativos OTC
         let ativosFiltrados = actives.filter(a => a.ticker.includes('-OTC'));
 
         let melhoresSinais = [];
@@ -66,7 +67,7 @@ async function buscarAnaliseServidor() {
             const campeao = melhoresSinais[0];
             const agora = Date.now();
             
-            // Trava para não ficar repetindo o mesmo sinal na mesma vela
+            // Trava para não ficar repetindo o mesmo ativo na mesma vela
             if (campeao.ativo === ultimoAtivoEnviado && (agora - tempoUltimoEnvio) < 60000) {
                 console.log(`⏳ [IGNORADO] ${campeao.ativo} (Aguardando nova vela)`);
             } else {
@@ -88,16 +89,12 @@ async function buscarAnaliseServidor() {
 async function analisarAtivoServidor(active) {
     try {
         const layerM1 = await sdk.realTimeChartDataLayer(active.id, 60);
-        // Pega 250 candles para calcular a EMA de 200 e os últimos movimentos
+        // Pega 250 candles para calcular a EMA de 200
         const candlesM1 = await layerM1.fetchAllCandles(Math.floor(Date.now() / 1000) - (250 * 60)); 
 
         if (!candlesM1 || candlesM1.length < 210) return null;
 
         const closes = candlesM1.map(c => c.close);
-        const highs = candlesM1.map(c => c.max);
-        const lows = candlesM1.map(c => c.min);
-        
-        // HLC3 = (High + Low + Close) / 3
         const hlc3 = candlesM1.map(c => (c.max + c.min + c.close) / 3);
 
         const closeAtual = closes[closes.length - 1];
@@ -152,8 +149,6 @@ async function analisarAtivoServidor(active) {
         return {
             ativo: active.ticker,
             direcao: direcao,
-            rsi: 0, // Não usado nesta estratégia
-            adx: 0, // Não usado nesta estratégia
             score: score,
             horario: horaEntrada
         };
