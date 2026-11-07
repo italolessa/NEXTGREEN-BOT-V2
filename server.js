@@ -1,38 +1,40 @@
 const express = require('express');
+const cors = require('cors');
 const app = express();
 const port = process.env.PORT || 10000;
 
-// Rota de saúde para o UptimeRobot
-app.get('/health', (req, res) => {
-    res.status(200).send('OK');
+app.use(cors());
+app.use(express.json()); // Permite receber dados do app
+
+let sinaisEncontrados = [];
+let configuracaoAtual = { timeframe: 'M1', mercado: 'OTC' };
+
+app.get('/health', (req, res) => res.status(200).send('OK'));
+
+// Rota que o App envia a configuração (M1/M5, OTC/Aberto)
+app.post('/api/configurar', (req, res) => {
+    configuracaoAtual = req.body;
+    console.log(`⚙️ Configuração recebida: ${configuracaoAtual.timeframe} | ${configuracaoAtual.mercado}`);
+    res.json({ success: true, config: configuracaoAtual });
 });
 
-// Importa o cérebro do robô
+// Rota que o App busca os sinais
+app.get('/api/sinais', (req, res) => {
+    res.json(sinaisEncontrados);
+});
+
+// Função que o bot usa para salvar o sinal
+global.adicionarSinal = (sinal) => {
+    // Só salva se o sinal bater com a configuração atual escolhida no app
+    if (sinal.timeframe === configuracaoAtual.timeframe && sinal.mercado === configuracaoAtual.mercado) {
+        sinaisEncontrados.unshift(sinal);
+        if (sinaisEncontrados.length > 50) sinaisEncontrados.pop();
+    }
+};
+
 const { iniciarBotServidor } = require('./backend/bot_servidor');
+const tokenPolarium = process.env.POLARIUM_TOKEN || 'COLE_SEU_TOKEN_AQUI';
 
-// =====================================================================
-// ⚠️ CONFIGURAÇÃO PARA TESTE LOCAL
-// =====================================================================
-// Se você for rodar no seu PC (node server.js), preencha aqui:
-const TOKEN_MANUAL = 'COLE_SEU_TOKEN_AQUI'; 
-const TIMEFRAME_MANUAL = 'M1'; // Escolha 'M1' ou 'M5'
+if (tokenPolarium) iniciarBotServidor(null, tokenPolarium);
 
-// =====================================================================
-// O Render vai usar as variáveis de ambiente. O PC usa as manuais.
-// =====================================================================
-const tokenFinal = process.env.POLARIUM_TOKEN || TOKEN_MANUAL;
-const timeframeFinal = process.env.TIMEFRAME || TIMEFRAME_MANUAL;
-
-if (!tokenFinal || tokenFinal === 'COLE_SEU_TOKEN_AQUI') {
-    console.error("❌ ERRO: Token não configurado.");
-    console.error("👉 Abra o server.js e cole seu token na variável TOKEN_MANUAL.");
-} else {
-    console.log(`🚀 Iniciando com Timeframe: ${timeframeFinal}`);
-    iniciarBotServidor(null, tokenFinal, timeframeFinal);
-}
-
-// Inicia o servidor web
-app.listen(port, () => {
-    console.log(`✅ Servidor NextGreen rodando na porta ${port}`);
-    console.log(`🌐 Acesse http://localhost:${port}/health para verificar o status.`);
-});
+app.listen(port, () => console.log(`✅ Servidor API rodando na porta ${port}`));
