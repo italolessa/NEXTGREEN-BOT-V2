@@ -1,11 +1,11 @@
 let configAtual = { timeframe: 'M1', mercado: 'OTC' };
 let sinalAtual = null;
 let historicoLocal = [];
-let ultimoAtivoIgnorado = null; // NOVO: Guarda o último ativo recebido
+let ultimoAtivoIgnorado = null;
 
 function setConfig(key, valor) {
     configAtual[key] = valor;
-    
+
     if (key === 'timeframe') {
         document.getElementById('btn-m1').classList.remove('active');
         document.getElementById('btn-m5').classList.remove('active');
@@ -21,16 +21,17 @@ function solicitarBusca() {
     document.getElementById('msg-inicial').style.display = 'none';
     document.getElementById('area-sinal').style.display = 'none';
     document.getElementById('loader').style.display = 'block';
-    
+
     document.getElementById('btn-buscar').innerText = "⏳ Lendo Polarium...";
     document.getElementById('btn-buscar').disabled = true;
     document.getElementById('btn-parar').style.display = 'block';
-    
-    // A MÁGICA ACONTECE AQUI: Envia a configuração + o ativo que deve ser ignorado
+
+    console.log(`🔍 Buscando ignorando: ${ultimoAtivoIgnorado || 'Nenhum'}`);
+
     window.api.configurarBusca({
         timeframe: configAtual.timeframe,
         mercado: configAtual.mercado,
-        ignorarAtivo: ultimoAtivoIgnorado 
+        ignorarAtivo: ultimoAtivoIgnorado
     });
 }
 
@@ -38,7 +39,7 @@ function pararBusca() {
     document.getElementById('loader').style.display = 'none';
     document.getElementById('msg-inicial').style.display = 'block';
     document.getElementById('msg-inicial').innerText = "Busca cancelada no aplicativo.";
-    
+
     document.getElementById('btn-buscar').innerText = "🔍 Buscar Ativo";
     document.getElementById('btn-buscar').disabled = false;
     document.getElementById('btn-parar').style.display = 'none';
@@ -49,11 +50,11 @@ function resetarFiltros() {
         configAtual = { timeframe: 'M1', mercado: 'OTC' };
         setConfig('timeframe', 'M1');
         setConfig('mercado', 'OTC');
-        ultimoAtivoIgnorado = null; // Limpa a memória do ativo
-        
+        ultimoAtivoIgnorado = null;
+
         historicoLocal = [];
         atualizarHistorico();
-        
+
         pararBusca();
         document.getElementById('msg-inicial').innerText = "Filtros resetados. Clique em 'Buscar Ativo'.";
     }
@@ -61,11 +62,12 @@ function resetarFiltros() {
 
 window.api.onNovoSinal((dados) => {
     sinalAtual = dados;
-    ultimoAtivoIgnorado = dados.ativo; // NOVO: Salva o ativo atual para ignorar na próxima busca
-    
+    ultimoAtivoIgnorado = dados.ativo;
+    console.log(`📌 Próxima busca vai ignorar: ${ultimoAtivoIgnorado}`);
+
     document.getElementById('loader').style.display = 'none';
     document.getElementById('area-sinal').style.display = 'block';
-    
+
     document.getElementById('btn-buscar').innerText = "🔍 Buscar Ativo";
     document.getElementById('btn-buscar').disabled = false;
     document.getElementById('btn-parar').style.display = 'none';
@@ -93,7 +95,7 @@ window.api.onNovoSinal((dados) => {
 
 function atualizarHistorico() {
     const container = document.getElementById('lista-historico');
-    
+
     if (historicoLocal.length === 0) {
         container.innerHTML = '<div style="color: #666; text-align: center; padding: 10px;">Nenhum sinal recebido ainda...</div>';
         return;

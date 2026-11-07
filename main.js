@@ -12,28 +12,32 @@ let mainWindow;
 let loginWindow;
 let welcomeWindow;
 let pollingInterval;
-let buscandoAtivamente = false; // NOVO: Trava para saber se está buscando
+let buscandoAtivamente = false;
+let ultimoIdRecebido = null; // ✅ Controle para não reenviar o mesmo sinal
 const SESSION_FILE = path.join(app.getPath('userData'), 'sessao.json');
 const RENDER_URL = 'https://nextgreen-bot-v2.onrender.com'; // SUA URL AQUI
 
 function iniciarPollingSinais() {
-    // Se já estiver buscando, não faz nada
     if (pollingInterval) clearInterval(pollingInterval);
-    
+
     pollingInterval = setInterval(async () => {
-        // SÓ busca se estiver no modo ativo
-        if (!buscandoAtivamente) return; 
+        if (!buscandoAtivamente) return;
 
         try {
             const resposta = await axios.get(`${RENDER_URL}/api/sinais`);
             if (resposta.data && resposta.data.length > 0) {
-                if (mainWindow && !mainWindow.isDestroyed()) {
-                    mainWindow.webContents.send('novo-sinal', resposta.data[0]);
-                    buscandoAtivamente = false; // Para de buscar depois de achar um sinal
+                const sinal = resposta.data[0];
+                // ✅ Só envia se for um sinal novo (id diferente)
+                if (sinal.id !== ultimoIdRecebido) {
+                    ultimoIdRecebido = sinal.id;
+                    if (mainWindow && !mainWindow.isDestroyed()) {
+                        mainWindow.webContents.send('novo-sinal', sinal);
+                        buscandoAtivamente = false;
+                    }
                 }
             }
         } catch (error) {}
-    }, 3000); // Checa a cada 3 segundos (mais rápido)
+    }, 3000);
 }
 
 function createWelcomeWindow() {
@@ -46,17 +50,17 @@ function createWelcomeWindow() {
 }
 
 function createMainWindow() {
-  mainWindow = new BrowserWindow({
-    width: 1200, height: 800, resizable: true, autoHideMenuBar: true, show: false,
-    webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true }
-  });
-  
-  mainWindow.loadFile('index.html');
-  
-  mainWindow.once('ready-to-show', () => {
-      mainWindow.show();
-      iniciarPollingSinais(); // Inicia o loop, mas ele está travado pelo buscandoAtivamente = false
-  });
+    mainWindow = new BrowserWindow({
+        width: 1200, height: 800, resizable: true, autoHideMenuBar: true, show: false,
+        webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true }
+    });
+
+    mainWindow.loadFile('index.html');
+
+    mainWindow.once('ready-to-show', () => {
+        mainWindow.show();
+        iniciarPollingSinais();
+    });
 }
 
 function abrirJanelaLogin(dadosLogin) {
@@ -89,11 +93,10 @@ ipcMain.on('verificar-login-salvo', (event) => welcomeWindow?.webContents.send('
 ipcMain.on('iniciar-login', (event, dados) => abrirJanelaLogin(dados));
 ipcMain.on('login-automatico', () => { if (welcomeWindow) welcomeWindow.close(); createMainWindow(); });
 
-// NOVO: Quando o usuário clica em "Ativar Busca", envia a config E liga a trava para buscar
 ipcMain.on('configurar-busca', async (event, config) => {
-    buscandoAtivamente = true; // Liga a busca
+    buscandoAtivamente = true;
+    ultimoIdRecebido = null; // ✅ Permite receber o próximo como novo
     try {
-        // Envia a config e limpa os sinais antigos
         await axios.post(`${RENDER_URL}/api/configurar`, config);
         if (mainWindow) mainWindow.webContents.send('config-salva');
     } catch (e) { console.log("Erro ao enviar config:", e.message); }

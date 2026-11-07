@@ -7,40 +7,62 @@ app.use(cors());
 app.use(express.json());
 
 let sinaisEncontrados = [];
+let sinalEntregue = false;
 
-// Inicializa a configuração global para o bot ler
 global.configuracaoAtual = { timeframe: 'M1', mercado: 'OTC', ignorarAtivo: null };
 global.buscando = false;
 
 app.get('/health', (req, res) => res.status(200).send('OK'));
 
-// Quando o App no PC clica em "Buscar Ativo", ele cai aqui
 app.post('/api/configurar', (req, res) => {
-    sinaisEncontrados = []; // Limpa a lista de sinais antigos
-    global.configuracaoAtual = req.body; // Salva as novas configs (M1/M5, OTC/Aberto, Ativo a ignorar)
-    global.buscando = true; // Liga a trava para o bot começar a buscar
+    sinaisEncontrados = [];
+    sinalEntregue = false;
+    global.configuracaoAtual = req.body;
+    global.buscando = true;
     
-    console.log(`⚙️ Nova busca solicitada. Ignorando: ${global.configuracaoAtual.ignorarAtivo || 'Nenhum'}`);
+    console.log(`⚙️ Nova busca. Ignorando: ${global.configuracaoAtual.ignorarAtivo || 'Nenhum'} | Mercado: ${global.configuracaoAtual.mercado}`);
     res.json({ success: true });
 });
 
-// O App no PC acessa essa rota a cada 3 segundos para ver se tem sinal novo
 app.get('/api/sinais', (req, res) => {
+    // Se já entregou, retorna vazio para o app não receber de novo
+    if (sinalEntregue) return res.json([]);
     res.json(sinaisEncontrados);
 });
 
-// Função que o bot usa para enviar o sinal encontrado
 global.adicionarSinal = (sinal) => {
-    sinaisEncontrados.unshift(sinal);
-    global.buscando = false; // Desliga a busca após enviar o sinal
+    // Comparação EXATA (não includes) para evitar falso positivo
+    const ignorar = global.configuracaoAtual.ignorarAtivo;
+    if (ignorar) {
+        const ativoLimpo = sinal.ativo.replace("-OTC", "").replace(" (OTC)", "").replace("/", "");
+        const ignorarLimpo = ignorar.replace("-OTC", "").replace(" (OTC)", "").replace("/", "");
+        
+        if (ativoLimpo === ignorarLimpo) {
+            console.log(`⏳ [IGNORADO] ${sinal.ativo} (mesmo ativo da busca anterior)`);
+            return; // NÃO desliga global.buscando, continua procurando
+        }
+    }
+    
+    // Filtro de mercado
+    const mercado = global.configuracaoAtual.mercado;
+    const isOtc = sinal.ativo.includes('-OTC');
+    if (mercado === 'OTC' && !isOtc) {
+        console.log(`⏳ [IGNORADO] ${sinal.ativo} (mercado != OTC)`);
+        return;
+    }
+    if (mercado === 'ABERTO' && isOtc) {
+        console.log(`⏳ [IGNORADO] ${sinal.ativo} (mercado != ABERTO)`);
+        return;
+    }
+    
+    sinaisEncontrados = [sinal];
+    sinalEntregue = false; // ainda não foi lido
+    global.buscando = false;
+    console.log(`✅ [ENVIADO] ${sinal.ativo} ${sinal.direcao}`);
 };
 
-// Importa e inicia o cérebro do bot
 const { iniciarBotServidor } = require('./backend/bot_servidor');
 const tokenPolarium = process.env.POLARIUM_TOKEN || 'COLE_SEU_TOKEN_AQUI';
-
-if (tokenPolarium) {
-    iniciarBotServidor(null, tokenPolarium);
-}
+if (tokenPolarium) iniciarBotServidor(null, tokenPolarium);
 
 app.listen(port, () => console.log(`✅ Servidor API rodando na porta ${port}`));
