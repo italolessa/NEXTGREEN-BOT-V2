@@ -4,6 +4,16 @@ let isBuscando = false;
 let ultimoAtivoEnviado = null;
 let tempoUltimoEnvio = 0;
 
+// Variável para guardar o que o app pediu
+let configSolicitada = { timeframe: 'M1', mercado: 'OTC' };
+
+// O server.js chama essa função para atualizar a config
+global.definirConfiguracao = (config) => {
+    configSolicitada = config;
+    ultimoAtivoEnviado = null; // Reseta a memória de repetição
+    console.log(`🤖 Cérebro atualizado: Foco em ${config.timeframe} | Mercado ${config.mercado}`);
+};
+
 async function iniciarBotServidor(window, tokenSsid) {
     if (!tokenSsid) return console.error("❌ Token não configurado.");
     console.log("⏳ Iniciando SDK no servidor...");
@@ -13,7 +23,7 @@ async function iniciarBotServidor(window, tokenSsid) {
         sdk = await ClientSdk.create(WS_URL, 82, new SsidAuthMethod(tokenSsid));
         global.BinaryOptionsDirection = BinaryOptionsDirection;
         
-        console.log("✅ SDK inicializado! Aguardando comando de busca do App...");
+        console.log("✅ SDK inicializado! Aguardando comando...");
         
         setInterval(async () => {
             if (!isBuscando && global.buscando) {
@@ -38,30 +48,27 @@ function calcularEMA(dados, period) {
 async function buscarAnaliseServidor() {
     if (!sdk || !global.buscando) return;
     isBuscando = true;
-    console.log(`🔎 [SERVIDOR] Ativado! Buscando cruzamento de EMAs (M1 e M5)...`);
+    
+    console.log(`🔎 [SERVIDOR] Ativado! Buscando EMAs (${configSolicitada.timeframe} - ${configSolicitada.mercado})...`);
     
     try {
         const binaryOptions = await sdk.binaryOptions();
         const actives = binaryOptions.getActives();
         
-        let ativosOtc = actives.filter(a => a.ticker.includes('-OTC'));
-        let ativosAberto = actives.filter(a => !a.ticker.includes('-OTC'));
+        // Filtra os ativos baseado no mercado escolhido no App
+        let ativosFiltrados = actives.filter(a => {
+            if (configSolicitada.mercado === 'OTC') return a.ticker.includes('-OTC');
+            else return !a.ticker.includes('-OTC');
+        });
+        
         let melhoresSinais = [];
 
-        for (let i = 0; i < ativosOtc.length; i += 5) {
+        for (let i = 0; i < ativosFiltrados.length; i += 5) {
             if (!global.buscando) break;
-            const lote = ativosOtc.slice(i, i + 5);
-            const res = await Promise.all(lote.map(ativo => analisarAtivoServidor(ativo, 'OTC')));
+            const lote = ativosFiltrados.slice(i, i + 5);
+            // Analisa o timeframe específico (M1 ou M5) escolhido no app
+            const res = await Promise.all(lote.map(ativo => analisarAtivoServidor(ativo, configSolicitada.mercado, configSolicitada.timeframe)));
             melhoresSinais = melhoresSinais.concat(res.filter(r => r !== null));
-        }
-
-        if (global.buscando) {
-            for (let i = 0; i < ativosAberto.length; i += 5) {
-                if (!global.buscando) break;
-                const lote = ativosAberto.slice(i, i + 5);
-                const res = await Promise.all(lote.map(ativo => analisarAtivoServidor(ativo, 'ABERTO')));
-                melhoresSinais = melhoresSinais.concat(res.filter(r => r !== null));
-            }
         }
 
         if (melhoresSinais.length > 0 && global.buscando) {
@@ -70,7 +77,7 @@ async function buscarAnaliseServidor() {
             const agora = Date.now();
             
             if (campeao.ativo === ultimoAtivoEnviado && (agora - tempoUltimoEnvio) < 60000) {
-                // Ignora repetição da mesma vela
+                // Ignora repetição na mesma vela
             } else {
                 ultimoAtivoEnviado = campeao.ativo;
                 tempoUltimoEnvio = agora;
@@ -80,7 +87,7 @@ async function buscarAnaliseServidor() {
                 }
             }
         } else if (global.buscando) {
-            console.log("⚠️ Nenhum cruzamento de EMA válido. O robô continua buscando a cada 30s...");
+            console.log(`⚠️ Nenhum cruzamento de EMA (${configSolicitada.timeframe}) válido no momento. Retentando...`);
         }
     } catch (error) {
         console.error("❌ Erro na varredura:", error.message);
@@ -89,25 +96,34 @@ async function buscarAnaliseServidor() {
     }
 }
 
-async function analisarAtivoServidor(active, mercado) {
+// Função que analisa um ativo específico no timeframe e mercado escolhidos
+async function analisarAtivoServidor(active, mercado, timeframe) {
     try {
-        const layerM1 = await sdk.realTimeChartDataLayer(active.id, 60);
-        const candlesM1 = await layerM1.fetchAllCandles(Math.floor(Date.now() / 1000) - (250 * 60)); 
-        const layerM5 = await sdk.realTimeChartDataLayer(active.id, 300);
-        const candlesM5 = await layerM5.fetchAllCandles(Math.floor(Date.now() / 1000) - (250 * 300)); 
+        // Define o tamanho da vela (60s para M1, 300s para M5)
+        const seconds = timeframe === 'M5' ? 300 : 60; 
+
+        const layer = await sdk.realTimeChartDataLayer(active.id, seconds);
+        const candles = await layer.fetchAllCandles(Math.floor(Date.now() / 1000) - (250 * seconds)); 
         
-        if (!candlesM1 || candlesM1.length < 210 || !candlesM5 || candlesM5.length < 210) return null;
+        if (!candles || candles.length < 210) return null;
 
-        const closesM1 = candlesM1.map(c => c.close);
-        const hlc3M1 = candlesM1.map(c => (c.max + c.min + c.close) / 3);
-        const closesM5 = candlesM5.map(c => c.close);
-        const hlc3M5 = candlesM5.map(c => (c.max + c.min + c.close) / 3);
+        const closes = candles.map(c => c.close);
+        const hlc3 = candles.map(c => (c.max + c.min + c.close) / 3);
 
-        const checkM1 = verificarCruzamento(closesM1, hlc3M1);
-        const checkM5 = verificarCruzamento(closesM5, hlc3M5);
+        const check = verificarCruzamento(closes, hlc3);
 
-        if (checkM1) return { ativo: active.ticker, timeframe: 'M1', direcao: checkM1, score: 95, mercado, horario: getHora(), id: Date.now() };
-        if (checkM5) return { ativo: active.ticker, timeframe: 'M5', direcao: checkM5, score: 95, mercado, horario: getHora(), id: Date.now() };
+        // Se encontrou o cruzamento, retorna o sinal com o tempo e mercado corretos
+        if (check) {
+            return { 
+                ativo: active.ticker, 
+                timeframe: timeframe, 
+                direcao: check, 
+                score: 95, 
+                mercado: mercado, 
+                horario: getHora(), 
+                id: Date.now() 
+            };
+        }
 
         return null;
     } catch (e) {
