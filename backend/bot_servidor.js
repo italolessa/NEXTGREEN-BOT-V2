@@ -145,9 +145,18 @@ function verificarCruzamento(closes, hlc3) {
     return null;
 }
 
+// --- CORREÇÃO DO FUSO HORÁRIO AQUI ---
 function getHora() {
-    const proximoMinuto = Math.floor(Date.now() / 60000) * 60000 + 60000;
-    return new Date(proximoMinuto).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    const agora = new Date();
+    const proximoMinuto = Math.floor(agora.getTime() / 60000) * 60000 + 60000;
+    
+    // Força o fuso horário de São Paulo/Brasília
+    return new Date(proximoMinuto).toLocaleTimeString('pt-BR', { 
+        timeZone: 'America/Sao_Paulo',
+        hour: '2-digit', 
+        minute: '2-digit', 
+        second: '2-digit' 
+    });
 }
 
 module.exports = { iniciarBotServidor };

@@ -68,14 +68,10 @@ function resetarFiltros() {
 
 // Recebe o sinal da nuvem e atualiza a tela
 window.api.onNovoSinal((dados) => {
-    // =========================================================
-    // A CORREÇÃO DEFINITIVA ESTÁ AQUI:
-    // Se o ativo que chegou da nuvem for o mesmo que já está salvo 
-    // na memória, o app ignora e não mostra na tela.
-    // =========================================================
+    // Trava para não repetir o mesmo ativo na tela
     if (ultimoAtivoEnviado && ultimoAtivoEnviado === dados.ativo) {
         console.log(`⏳ App ignorou sinal repetido da nuvem: ${dados.ativo}`);
-        return; // Interrompe o código aqui e espera o próximo sinal
+        return; 
     }
 
     sinalAtual = dados;
@@ -94,7 +90,10 @@ window.api.onNovoSinal((dados) => {
     document.getElementById('res-ativo').innerText = dados.ativo;
     document.getElementById('res-tf').innerText = dados.timeframe;
     document.getElementById('res-conf').innerText = `${dados.score}%`;
-    document.getElementById('res-hora').innerText = `⏰ ${dados.horario}`;
+    
+    // --- CORREÇÃO DO FUSO HORÁRIO AQUI ---
+    // Adiciona o (BRT) para você saber que é o horário de Brasília
+    document.getElementById('res-hora').innerText = `⏰ ${dados.horario} (BRT)`;
 
     // Muda a cor e o texto dependendo da direção (CALL/PUT)
     const box = document.getElementById('box-direcao');
@@ -136,14 +135,12 @@ function atualizarHistorico() {
 // Botão Enviar para Corretora (Aprovar)
 function enviarParaCorretora() {
     if (sinalAtual) {
-        alert(`✅ Ordem enviada para a Corretora!\n\nAtivo: ${sinalAtual.ativo}\nDireção: ${sinalAtual.direcao}\nEntrada: ${sinalAtual.horario}`);
+        alert(`✅ Ordem enviada para a Corretora!\n\nAtivo: ${sinalAtual.ativo}\nDireção: ${sinalAtual.direcao}\nEntrada: ${sinalAtual.horario} (BRT)`);
         
         // Limpa a tela após o envio
         document.getElementById('area-sinal').style.display = 'none';
         document.getElementById('msg-inicial').style.display = 'block';
         document.getElementById('msg-inicial').innerText = "Sinal enviado! Clique em 'Buscar Ativo' para uma nova análise.";
-        
-        // Nós NÃO limpamos o ultimoAtivoEnviado aqui, para que se você buscar de novo, ele ainda ignore esse ativo e busque outro.
     }
 }
 
