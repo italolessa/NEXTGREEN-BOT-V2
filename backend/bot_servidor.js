@@ -5,14 +5,13 @@ let ultimoAtivoEnviado = null;
 let tempoUltimoEnvio = 0;
 
 let configSolicitada = { timeframe: 'M1', mercado: 'OTC' };
-let ativosIgnoradosLista = []; // NOVA MEMÓRIA: Guarda todos os ativos já mostrados
+let ativosIgnoradosLista = []; 
 
 global.definirConfiguracao = (config) => {
     configSolicitada = config;
     console.log(`🤖 Cérebro atualizado: Foco em ${config.timeframe} | Mercado ${config.mercado}`);
 };
 
-// Função para limpar a lista de bloqueio quando o usuário pedir
 global.resetarAtivos = () => {
     ativosIgnoradosLista = [];
     ultimoAtivoEnviado = null;
@@ -81,6 +80,7 @@ function calcularADX(highs, lows, closes, period = 14) {
     return { adx: dx, plusDI, minusDI };
 }
 
+// --- O CÉREBRO ESPECIALISTA (JÚRI DE ESTRATÉGIAS) ---
 function analisarGraficoComEstrategias(candles) {
     const closes = candles.map(c => c.close);
     const highs = candles.map(c => c.max);
@@ -131,30 +131,35 @@ async function buscarAnaliseServidor() {
     if (!sdk || !global.buscando) return;
     isBuscando = true;
     
-    console.log(`🔎 [ROBÔ] Buscando ativos (Ignorando ${ativosIgnoradosLista.length} já vistos)...`);
+    console.log(`🔎 [ROBÔ] Buscando ativos Forex/Cripto (Ignorando ${ativosIgnoradosLista.length} já vistos)...`);
     
     try {
         const binaryOptions = await sdk.binaryOptions();
         const actives = binaryOptions.getActives();
         const now = sdk.currentTime();
         
-        // Filtra os ativos, removendo os que já estão na lista de ignorados
+        // --- FILTRO: APENAS FOREX E CRIPTO ---
+        const moedasPermitidas = ['EUR', 'USD', 'GBP', 'JPY', 'AUD', 'CAD', 'CHF', 'NZD', 'BTC', 'ETH'];
+
         let ativosFiltrados = actives.filter(a => {
             const mercadoOk = configSolicitada.mercado === 'OTC' ? a.ticker.includes('-OTC') : !a.ticker.includes('-OTC');
             const estaAberto = a.canBeBoughtAt(now);
             const jaFoiMostrado = ativosIgnoradosLista.includes(a.ticker);
+            
+            // Verifica se o ativo tem alguma das moedas permitidas
+            const isForex = moedasPermitidas.some(moeda => a.ticker.includes(moeda));
 
-            return mercadoOk && estaAberto && !jaFoiMostrado;
+            return mercadoOk && estaAberto && isForex && !jaFoiMostrado;
         });
         
-        // Se todos os ativos do mercado já foram vistos, limpa a lista para recomeçar o ciclo
+        // Se todos os ativos permitidos já foram vistos, limpa a lista para recomeçar o ciclo
         if (ativosFiltrados.length === 0) {
-            console.log("♻️ Todos os ativos já foram vistos. Reiniciando o ciclo de busca...");
-            ativosIgnoradosLista = []; // Limpa a lista
-            // Re-filtra agora com a lista limpa
+            console.log("♻️ Todos os ativos Forex/Cripto já foram vistos. Reiniciando o ciclo...");
+            ativosIgnoradosLista = [];
             ativosFiltrados = actives.filter(a => {
                 const mercadoOk = configSolicitada.mercado === 'OTC' ? a.ticker.includes('-OTC') : !a.ticker.includes('-OTC');
-                return mercadoOk && a.canBeBoughtAt(now);
+                const isForex = moedasPermitidas.some(moeda => a.ticker.includes(moeda));
+                return mercadoOk && a.canBeBoughtAt(now) && isForex;
             });
         }
 
@@ -171,7 +176,6 @@ async function buscarAnaliseServidor() {
             melhoresSinais.sort((a, b) => b.confianca - a.confianca);
             const campeao = melhoresSinais[0];
             
-            // Adiciona o novo campeão à lista de ignorados
             ativosIgnoradosLista.push(campeao.ativo);
             ultimoAtivoEnviado = campeao.ativo;
             
@@ -179,7 +183,7 @@ async function buscarAnaliseServidor() {
             if (global.adicionarSinal) global.adicionarSinal(campeao);
             
         } else if (global.buscando) {
-            console.log(`⚠️ Nenhum setup encontrado nos ativos restantes. Retentando...`);
+            console.log(`⚠️ Nenhum setup encontrado nos ativos Forex/Cripto. Retentando...`);
         }
     } catch (error) {
         console.error("❌ Erro na varredura:", error.message);
