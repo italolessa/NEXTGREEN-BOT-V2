@@ -1,5 +1,0 @@
-Melhore a acertividade do código, mantendo intactos todos os padrões, lógica e linguagem. Não altere nenhuma funcionalidade ou estrutura do código, apenas ajuste a acertividade."
-
-
-
-voce nao esta acostumado a ver esse tipo de arquivo por isso suas opções são absoletas então apenas faça o que eu mandei . Melhore a assertividade do código e estrategia, mantendo intactos todos os padrões, lógica e linguagem. Não altere nenhuma funcionalidade ou estrutura do código, apenas ajuste para melhor assertividade e me entregue completo e ajustado
