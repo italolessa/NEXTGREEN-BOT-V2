@@ -1,0 +1,72 @@
+instrument {
+    name = 'HAMMER SHOOTING STAR',
+    short_name = 'HSS',
+    icon = 'indicators:BB',
+    overlay = true
+}
+
+-- ============================================
+-- CONFIGURAES BSICAS
+-- ============================================
+
+color_buy = input("#00FF00", "Cor Compra", input.color)
+color_sell = input("#FF0000", "Cor Venda", input.color)
+show_buy = input(true, "Mostrar Compra", input.plot_visibility)
+show_sell = input(true, "Mostrar Venda", input.plot_visibility)
+
+-- ============================================
+-- CLCULO DOS TAMANHOS DA VELA
+-- ============================================
+
+-- Corpo da vela (positivo = alta, negativo = baixa)
+corpo = close - open
+
+-- Sombra superior (pavio de cima)
+sombra_sup = high - math.max(open, close)
+
+-- Sombra inferior (pavio de baixo)
+sombra_inf = math.min(open, close) - low
+
+-- ============================================
+-- MARTELO (COMPRA)
+-- ============================================
+
+martelo = (close > open) and (sombra_inf > corpo * 2) and (sombra_sup < corpo * 0.3)
+
+-- ============================================
+-- ESTRELA CADENTE (VENDA)
+-- ============================================
+
+estrela_cadente = (close < open) and (sombra_sup > (open - close) * 2) and (sombra_inf < (open - close) * 0.3)
+
+-- ============================================
+-- PLOTAGEM DOS SINAIS
+-- ============================================
+
+-- Sinal de COMPRA (Martelo)
+if show_buy and martelo then
+    plot_shape(true,
+        "MARTELO",
+        shape_style.triangleup,
+        shape_size.huge,
+        color_buy,
+        shape_location.belowbar,
+        0,
+        "MARTELO",
+        color_buy
+    )
+end
+
+-- Sinal de VENDA (Estrela Cadente)
+if show_sell and estrela_cadente then
+    plot_shape(true,
+        "ESTR. CADENTE",
+        shape_style.triangledown,
+        shape_size.huge,
+        color_sell,
+        shape_location.abovebar,
+        0,
+        "ESTR. CADENTE",
+        color_sell
+    )
+end

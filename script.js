@@ -20,7 +20,7 @@ function solicitarBusca() {
     document.getElementById('msg-inicial').style.display = 'none';
     document.getElementById('area-sinal').style.display = 'none';
     document.getElementById('loader').style.display = 'block';
-    document.getElementById('btn-buscar').innerText = "⏳ Lendo Polarium...";
+    document.getElementById('btn-buscar').innerText = "⏳ Analisando...";
     document.getElementById('btn-buscar').disabled = true;
     document.getElementById('btn-parar').style.display = 'block';
 
@@ -54,9 +54,7 @@ function resetarFiltros() {
 }
 
 window.api.onNovoSinal((dados) => {
-    if (ultimoAtivoEnviado && ultimoAtivoEnviado === dados.ativo) {
-        return; 
-    }
+    if (ultimoAtivoEnviado && ultimoAtivoEnviado === dados.ativo) return; 
 
     sinalAtual = dados;
     ultimoAtivoEnviado = dados.ativo; 
@@ -68,9 +66,9 @@ window.api.onNovoSinal((dados) => {
     document.getElementById('btn-parar').style.display = 'none';
 
     document.getElementById('res-ativo').innerText = dados.ativo;
-    document.getElementById('res-tf').innerText = dados.timeframe;
-    document.getElementById('res-conf').innerText = `${dados.score}%`;
-    
+    // Mostra qual estratégia o robô escolheu
+    document.getElementById('res-tf').innerText = `${dados.timeframe} (${dados.estrategia})`;
+    document.getElementById('res-conf').innerText = `${dados.confianca}%`;
     document.getElementById('res-hora').innerText = `⏰ ${dados.horario} (BRT)`;
 
     const box = document.getElementById('box-direcao');
@@ -98,8 +96,8 @@ function atualizarHistorico() {
     container.innerHTML = historicoLocal.map(item => `
         <div class="historico-item">
             <span class="historico-ativo">${item.ativo}</span>
-            <span class="historico-dir" style="color: ${item.direcao === 'CALL' ? 'var(--green)' : 'var(--red)'};">${item.direcao}</span>
-            <span class="historico-score">${item.timeframe} | ${item.score}%</span>
+            <span class="historico-direcao" style="color: ${item.direcao === 'CALL' ? 'var(--green)' : 'var(--red)'};">${item.direcao}</span>
+            <span class="historico-score">${item.estrategia} | ${item.confianca}%</span>
             <span class="historico-hora">⏰ ${item.horario}</span>
         </div>
     `).join('');
@@ -107,7 +105,7 @@ function atualizarHistorico() {
 
 function enviarParaCorretora() {
     if (sinalAtual) {
-        alert(`✅ Ordem Confirmada!\n\nAtivo: ${sinalAtual.ativo}\nDireção: ${sinalAtual.direcao}\nENTRAR EXATAMENTE ÀS: ${sinalAtual.horario} (BRT)`);
+        alert(`✅ Ordem Confirmada!\n\nAtivo: ${sinalAtual.ativo}\nDireção: ${sinalAtual.direcao}\nEstratégia: ${sinalAtual.estrategia}\nENTRAR EXATAMENTE ÀS: ${sinalAtual.horario} (BRT)`);
         document.getElementById('area-sinal').style.display = 'none';
         document.getElementById('msg-inicial').style.display = 'block';
         document.getElementById('msg-inicial').innerText = "Aguardando o horário de entrada na Polarium...";

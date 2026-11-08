@@ -1,0 +1,185 @@
+instrument {
+    name = 'ESTRATEGIA SR2 2022',
+    icon = 'indicators:BelkhayateTiming',
+    overlay = false
+}
+
+
+
+exibir_tracamento = input ( 1, "@EfraiTraders Deseja exibir?", input.string_selection, {"SI","No"})
+
+input_group { "SMAA", smaa_color = input{ default = "yellow", type = input.color }}
+input_group { "SMAB", smab_color = input{ default = "black", type = input.color }}
+
+input_group { "Up", up_color = input{ default = "green", type = input.color }}
+input_group { "Down", Down_color = input{ default = "red", type = input.color }}
+
+
+input_group {"EMA", ema_color= input {default= '#10A3C4', type= input.color}}
+input_group {"BANDA SUPERIOR", bbsup_color= input{ default= "#DA4933", type= input.color}}
+input_group {"BANDA INFERIOR", bbinf_color= input{ default= "#22D34F", type= input.color}}
+input_group {"CALL", call_color= input{ default= "green", type= input.color}}
+input_group {"PUT", put_color= input{ default= "red", type= input.color}}
+
+
+smaa= sma(close, '30')
+upper_band= smaa + (stdev(close,30) * 3.0)
+lower_band= smaa - (stdev(close,30) * 3.0)
+emaa= ema(close, '200')
+
+if Exibir_tracamento == 1 then
+plot(emaa, "SMA", ema_color)
+plot(upper_band, "UPPER_BAND", bbsup_color)
+plot(lower_band, "LOWER_BAND", bbinf_color)
+end
+
+
+sec = security(current_ticker_id, "5m")
+
+
+period = input (12, "front.period", input.integer, 1)
+
+source = input (1, "front.ind.source", input.string_selection,  inputs.titles)
+fn     = input (1, "front.newind.average", input.string_selection, averages.titles)
+
+input_group {
+    "front.newind.barcolors",
+    up_color   = input { default = "#2CAC40", type = input.color },
+    down_color = input { default = "#DB4931", type = input.color }
+}
+
+local sourceSeries = inputs [source]
+local averageFunction = averages [fn]
+
+mean = averageFunction (sourceSeries, period)
+mad = sourceSeries - mean
+
+rect {
+    first = 0,
+    second = mad,
+    color = mad >= mad [1] and up_color or down_color,
+    width = 0.4
+}
+
+if
+( mad  <= 0 and ( mad[1] > mad) and  (smaa < smab) and (smaao > smabo) and close <= emaa ) then 
+plot_shape (1,
+"Down",
+shape_style.arrowdown,
+shape_size.huge,
+down_color,
+shape_location.abovebar, 
+0,
+" Down ",
+1)
+end
+
+if
+( mad  >= 0 and (mad > mad[1]) and  (smaa > smab) and close >= emaa and smaao < smabo)
+ then 
+plot_shape (1 ,
+"Up",
+shape_style.arrowup,
+shape_size.huge,
+up_color,
+shape_location.belowbar, 
+0,
+"Up",
+1)
+
+end
+
+function prev(s,i)
+    y=abs(round(i))
+    return s[y]
+end
+
+length = input(5, "Numero de Velas")
+extTop = input(8, "Extreme Level Top")
+extTop1 = input(9, "Extreme Level Top")
+extBot = input(-5, "Extreme Level Bottom")
+sigTop = input(5, "Significant Level Top")
+sigmeio = input(0, "Significant Level Top")
+sigBot = input(-8, "Significant Level Bottom")
+sigBot1 = input(-9, "Significant Level Bottom")
+fairTop = input(5, "Fair Value Top")
+fairBot = input(-5, "Fair Value Bottom")
+
+varp = round(length/5)
+h_f = length > 7
+
+vara= h_f and highest(high,varp)-lowest(low,varp) or 0
+varr1 = h_f and iff(vara==0 and varp==1,abs(close-prev(close,-varp)),vara) or 0
+varb=h_f and prev(highest(high,varp),-varp+1)-prev(lowest(low,varp),-varp) or 0
+varr2 = h_f and iff(varb==0 and varp==1,abs( prev(close,-varp)-prev(close,-varp*2) ),varb) or 0
+varc=h_f and prev(highest(high,varp),-varp*2)-prev(lowest(low,varp),-varp*2) or 0
+varr3 = h_f and iff(varc == 0 and varp==1,abs(prev(close,-varp*2)-prev(close,-varp*3)),varc) or 0
+vard = h_f and prev(highest(high,varp),-varp*3)-prev(lowest(low,varp),-varp*3) or 0
+varr4 = h_f and iff(vard == 0 and varp==1,abs(prev(close,-varp*3)-prev(close,-varp*4)),vard) or 0
+vare = h_f and prev(highest(high,varp),-varp*4)-prev(lowest(low,varp),-varp*4) or 0
+varr5 = h_f and iff(vare == 0 and varp==1,abs(prev(close,-varp*4)-prev(close,-varp*5)),vare) or 0
+cdelta = abs(close - prev(close,-1))
+var0 = (not h_f) and iff((cdelta > (high-low)) or (high==low),cdelta,(high-low)) or 0
+lrange=h_f and ((varr1+varr2+varr3+varr4+varr5)/5)*.2 or sma(var0,5)*.2
+
+mba = sma( (high+low)/2,length)
+vopen = (open- mba)/lrange
+vhigh = (high-mba)/lrange
+vlow = (low-mba)/lrange 
+vclose = (close-mba)/lrange 
+
+colorr = open > close and "red" or "green"
+
+plot_candle {
+    open = vopen,
+    high = vhigh,
+    low = vlow,
+    close = vclose,
+    candle_color = colorr
+}
+
+hline(extTop,"","red")
+hline(extTop1,"","red")
+hline(extBot,"","green") 
+hline(sigTop,"","red")
+hline(sigmeio,"","gold")
+hline(sigBot,"","green")
+hline(sigBot1,"","green")
+hline(fairTop,"","red")
+hline(fairBot,"","green")
+
+
+
+input_group { "ENG - UP COLOR", call_color = input { default="green", type = input.color } }
+input_group { "ENG - DOWN COLOR", put_color = input { default="red", type = input.color } }
+
+
+ 
+if ((close[1] < open[1]) and (close > open) and (close > high[1]) and close[1] >= open) then
+
+    plot_shape(1,
+            'Bull_Engulfing',
+            shape_style.arrowup,
+            shape_size.huge,
+            call_color,
+            shape_location.belowbar,
+            0,
+            "",
+            call_color            ) 
+else
+    if ((close[1] > open[1]) and (close < open) and (close < low[1]) and close[1] <= open) then
+
+    plot_shape(1,
+            'Bear_Engulfing',
+            shape_style.arrowdown,
+            shape_size.huge,
+            put_color,
+            shape_location.abovebar,
+            0,
+            "",
+            put_color)
+    end
+end
+
+
+

@@ -1,0 +1,161 @@
+instrument {
+    name = 'Alerta_5+Cruzamento',
+    short_name = 'TESTE',
+    overlay = true
+}
+
+MaFast_period = input(9, "EMA Rapida", input.integer, 1, 100, 1)
+MaSlow_period = input(34, "EMA Lenta", input.integer, 1, 100, 1)
+
+-- ============================================================
+-- PARAMETROS DAS 5 CONFIRMAES
+-- ============================================================
+ema9_period   = input(9,  "EMA 9 Periodo",   input.integer, 1, 1000, 1)
+ema21_period  = input(21, "EMA 21 Periodo",  input.integer, 1, 1000, 1)
+ema50_period  = input(50, "EMA 50 Periodo",  input.integer, 1, 1000, 1)
+rsi_period    = input(14, "Periodo RSI",     input.integer, 1, 100,  1)
+
+input_group {
+    "Cores",
+    colorBuy = input { default = "#00FF00", type = input.color },
+    colorSell = input { default = "#FF0000", type = input.color },
+    colorAlert = input { default = "#FFFF00", type = input.color }
+}
+
+-- ============================================================
+-- CRUZAMENTO ORIGINAL (EMA Fast x EMA Slow)
+-- ============================================================
+
+-- Clculo das EMAs
+emaFast = ema(close, MaFast_period)
+emaSlow = ema(close, MaSlow_period)
+
+-- Cruzamento para CIMA (COMPRA)
+buyCross = conditional(emaFast > emaSlow and emaFast[1] < emaSlow[1])
+
+-- Cruzamento para BAIXO (VENDA)
+sellCross = conditional(emaFast < emaSlow and emaFast[1] > emaSlow[1])
+
+-- ============================================================
+-- CONFIRMAO 1: ALINHAMENTO DAS 3 EMAs
+-- ============================================================
+ema9  = ema(close, ema9_period)
+ema21 = ema(close, ema21_period)
+ema50 = ema(close, ema50_period)
+
+emas_alta  = ema9 > ema21 and ema21 > ema50
+emas_baixa = ema9 < ema21 and ema21 < ema50
+
+-- ============================================================
+-- CONFIRMAO 2: RSI
+-- ============================================================
+rsi_val  = rsi(close, rsi_period)
+rsi_buy  = rsi_val < 70
+rsi_sell = rsi_val > 30
+
+-- ============================================================
+-- CONFIRMAO 3: PRESSAO DA VELA
+-- ============================================================
+pressao_up   = close > (high + low) / 2
+pressao_down = close < (high + low) / 2
+
+-- ============================================================
+-- CONFIRMAO 4: INCLINACAO DAS MEDIAS
+-- ============================================================
+inclinacao_buy  = ema9 > ema9[1] and ema21 > ema21[1]
+inclinacao_sell = ema9 < ema9[1] and ema21 < ema21[1]
+
+-- ============================================================
+-- CONFIRMAO 5: PRECO ACIMA/ABAIXO DA EMA 50
+-- ============================================================
+tendencia_alta  = close > ema50
+tendencia_baixa = close < ema50
+
+-- ============================================================
+-- CONTA AS CONFIRMAES
+-- ============================================================
+
+-- Para COMPRA
+confirmacoes_buy = 0
+if emas_alta then confirmacoes_buy = confirmacoes_buy + 1 end
+if rsi_buy then confirmacoes_buy = confirmacoes_buy + 1 end
+if pressao_up then confirmacoes_buy = confirmacoes_buy + 1 end
+if inclinacao_buy then confirmacoes_buy = confirmacoes_buy + 1 end
+if tendencia_alta then confirmacoes_buy = confirmacoes_buy + 1 end
+
+-- Para VENDA
+confirmacoes_sell = 0
+if emas_baixa then confirmacoes_sell = confirmacoes_sell + 1 end
+if rsi_sell then confirmacoes_sell = confirmacoes_sell + 1 end
+if pressao_down then confirmacoes_sell = confirmacoes_sell + 1 end
+if inclinacao_sell then confirmacoes_sell = confirmacoes_sell + 1 end
+if tendencia_baixa then confirmacoes_sell = confirmacoes_sell + 1 end
+
+-- ============================================================
+-- PRE-ALERTA (bolinha amarela) - aparece com 4 confirmaes
+-- ============================================================
+preAlert_buy  = confirmacoes_buy >= 4
+preAlert_sell = confirmacoes_sell >= 4
+
+-- ============================================================
+-- PLOT DAS EMAS ORIGINAIS
+-- ============================================================
+plot(emaFast, "EMA Rapida", "#FFD700", 1)
+plot(emaSlow, "EMA Lenta", "#FFA500", 2)
+
+-- ============================================================
+-- PLOT PRE-ALERTA (bolinha amarela)
+-- ============================================================
+plot_shape(
+    preAlert_buy,
+    "PRE_CALL",
+    shape_style.circle,
+    shape_size.small,
+    colorAlert,
+    shape_location.belowbar,
+    -1,
+    "ATENCAO CALL",
+    "black"
+)
+
+plot_shape(
+    preAlert_sell,
+    "PRE_PUT",
+    shape_style.circle,
+    shape_size.small,
+    colorAlert,
+    shape_location.abovebar,
+    -1,
+    "ATENCAO PUT",
+    "black"
+)
+
+-- ============================================================
+-- PLOT SINAL COMPRA (ORIGINAL - NO ALTERADO)
+-- ============================================================
+plot_shape(
+    buyCross,
+    "COMPRA",
+    shape_style.triangleup,
+    shape_size.huge,
+    colorBuy,
+    shape_location.belowbar,
+    -0,
+    "CALL",
+    "white"
+)
+
+-- ============================================================
+-- PLOT SINAL VENDA (ORIGINAL - NO ALTERADO)
+-- ============================================================
+plot_shape(
+    sellCross,
+    "VENDA",
+    shape_style.triangledown,
+    shape_size.huge,
+    colorSell,
+    shape_location.abovebar,
+    -0,
+    "PUT",
+    "white"
+)

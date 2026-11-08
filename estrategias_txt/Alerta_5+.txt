@@ -1,0 +1,182 @@
+instrument {
+    name = 'Alerta_5+',
+    short_name = 'TESTE',
+    overlay = true
+}
+
+MaFast_period = input(9, "EMA Rapida", input.integer, 1, 100, 1)
+MaSlow_period = input(34, "EMA Lenta", input.integer, 1, 100, 1)
+
+-- ============================================================
+-- PARAMETROS DAS 5 CONFIRMAES
+-- ============================================================
+ema9_period   = input(9,  "EMA 9 Periodo",   input.integer, 1, 1000, 1)
+ema21_period  = input(21, "EMA 21 Periodo",  input.integer, 1, 1000, 1)
+ema50_period  = input(50, "EMA 50 Periodo",  input.integer, 1, 1000, 1)
+rsi_period    = input(14, "Periodo RSI",     input.integer, 1, 100,  1)
+
+input_group {
+    "Cores",
+    colorBuy = input { default = "#00FF00", type = input.color },
+    colorSell = input { default = "#FF0000", type = input.color },
+    colorAlert = input { default = "#FFFF00", type = input.color }
+}
+
+
+-- ============================================================
+-- CONFIRMAO 1: ALINHAMENTO DAS 3 EMAs
+-- ============================================================
+ema9  = ema(close, ema9_period)
+ema21 = ema(close, ema21_period)
+ema50 = ema(close, ema50_period)
+
+emas_alta  = ema9 > ema21 and ema21 > ema50
+emas_baixa = ema9 < ema21 and ema21 < ema50
+
+-- ============================================================
+-- CONFIRMAO 2: RSI
+-- ============================================================
+rsi_val  = rsi(close, rsi_period)
+rsi_buy  = rsi_val < 70
+rsi_sell = rsi_val > 30
+
+-- ============================================================
+-- CONFIRMAO 3: PRESSO DA VELA
+-- ============================================================
+pressao_up   = close > (high + low) / 2
+pressao_down = close < (high + low) / 2
+
+-- ============================================================
+-- CONFIRMAO 4: INCLINAO DAS MDIAS
+-- ============================================================
+inclinacao_buy  = ema9 > ema9[1] and ema21 > ema21[1]
+inclinacao_sell = ema9 < ema9[1] and ema21 < ema21[1]
+
+-- ============================================================
+-- CONFIRMAO 5: PREO ACIMA/ABAIXO DA EMA 50
+-- ============================================================
+tendencia_alta  = close > ema50
+tendencia_baixa = close < ema50
+
+-- ============================================================
+-- CONTADOR DE RESET PARA REVERSO (SINTAXE LUA)
+-- ============================================================
+ultimo_sinal = ultimo_sinal or 0  -- 0 = sem sinal, 1 = call, 2 = put
+
+-- Detecta reverso: vela contrria ao sinal anterior
+reversao_call_para_put = (ultimo_sinal == 1) and (close < open)  -- Vela vermelha aps CALL
+reversao_put_para_call = (ultimo_sinal == 2) and (close > open)  -- Vela verde aps PUT
+
+-- Reseta os contadores se houver reverso
+if reversao_call_para_put or reversao_put_para_call then
+    ultimo_sinal = 0
+end
+
+-- ============================================================
+-- CONTA AS CONFIRMAES (respeitando o reset)
+-- ============================================================
+
+-- Para COMPRA (reseta se ltimo sinal foi PUT e houve reverso)
+confirmacoes_buy = 0
+if ultimo_sinal ~= 2 then  -- Se no teve PUT recente
+    if emas_alta then confirmacoes_buy = confirmacoes_buy + 1 end
+    if rsi_buy then confirmacoes_buy = confirmacoes_buy + 1 end
+    if pressao_up then confirmacoes_buy = confirmacoes_buy + 1 end
+    if inclinacao_buy then confirmacoes_buy = confirmacoes_buy + 1 end
+    if tendencia_alta then confirmacoes_buy = confirmacoes_buy + 1 end
+end
+
+-- Para VENDA (reseta se ltimo sinal foi CALL e houve reverso)
+confirmacoes_sell = 0
+if ultimo_sinal ~= 1 then  -- Se no teve CALL recente
+    if emas_baixa then confirmacoes_sell = confirmacoes_sell + 1 end
+    if rsi_sell then confirmacoes_sell = confirmacoes_sell + 1 end
+    if pressao_down then confirmacoes_sell = confirmacoes_sell + 1 end
+    if inclinacao_sell then confirmacoes_sell = confirmacoes_sell + 1 end
+    if tendencia_baixa then confirmacoes_sell = confirmacoes_sell + 1 end
+end
+
+-- ============================================================
+-- PRE-ALERTA (bolinha amarela) - aparece com 3 confirmaes
+-- ============================================================
+preAlert_buy  = confirmacoes_buy >= 3 and confirmacoes_buy < 5
+preAlert_sell = confirmacoes_sell >= 3 and confirmacoes_sell < 5
+
+-- ============================================================
+-- SINAL DEFINITIVO - aparece com 5 confirmaes
+-- ============================================================
+sinal_call = confirmacoes_buy == 5
+sinal_put  = confirmacoes_sell == 5
+
+-- Atualiza o ltimo sinal
+if sinal_call then
+    ultimo_sinal = 1
+elseif sinal_put then
+    ultimo_sinal = 2
+end
+
+-- ============================================================
+-- PLOT DAS EMAS ORIGINAIS
+-- ============================================================
+emaFast = ema(close, MaFast_period)
+emaSlow = ema(close, MaSlow_period)
+
+plot(emaFast, "EMA Rapida", "#FFD700", 1)
+plot(emaSlow, "EMA Lenta", "#FFA500", 2)
+
+-- ============================================================
+-- PLOT PRE-ALERTA (bolinha amarela) - 3 ou 4 confirmaes
+-- ============================================================
+plot_shape(
+    preAlert_buy,
+    "PRE_CALL",
+    shape_style.circle,
+    shape_size.small,
+    colorAlert,
+    shape_location.belowbar,
+    -1,
+    "ATENO CALL",
+    "black"
+)
+
+plot_shape(
+    preAlert_sell,
+    "PRE_PUT",
+    shape_style.circle,
+    shape_size.small,
+    colorAlert,
+    shape_location.abovebar,
+    -1,
+    "ATENO PUT",
+    "black"
+)
+
+-- ============================================================
+-- PLOT SINAL CALL (tringulo verde) - 5 confirmaes
+-- ============================================================
+plot_shape(
+    sinal_call,
+    "CALL",
+    shape_style.triangleup,
+    shape_size.huge,
+    colorBuy,
+    shape_location.belowbar,
+    0,
+    "CALL",
+    "white"
+)
+
+-- ============================================================
+-- PLOT SINAL PUT (tringulo vermelho) - 5 confirmaes
+-- ============================================================
+plot_shape(
+    sinal_put,
+    "PUT",
+    shape_style.triangledown,
+    shape_size.huge,
+    colorSell,
+    shape_location.abovebar,
+    0,
+    "PUT",
+    "white"
+)

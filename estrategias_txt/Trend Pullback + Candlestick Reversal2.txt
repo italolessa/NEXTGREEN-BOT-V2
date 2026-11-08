@@ -1,0 +1,139 @@
+instrument {
+    name = 'Trend Pullback2 + Candlestick Reversal (Premium)',
+    short_name = 'TPB-CR-PRO',
+    icon = 'indicators:BB',
+    overlay = true
+}
+
+-- Configuraes de input
+input_group {
+    "Configuraes Principais",
+    fastMA_period = input(5, "Perodo MA Rpida", input.integer, 1, 1000, 1),
+    slowMA_period = input(20, "Perodo MA Lenta", input.integer, 1, 1000, 1),
+    trendMA_period = input(200, "Perodo MA Tendncia", input.integer, 1, 1000, 5),
+    useEMA = input(true, "Usar EMA (seno SMA)", input.plot_visibility),
+    candleBodyPercent = input(1.0, "Tamanho mnimo corpo vela (%)", input.double, 0.1, 10, 0.1)
+}
+
+input_group {
+    "Filtro de Volume",
+    useVolumeFilter = input(false, "Usar Filtro de Volume", input.plot_visibility),
+    minVolume = input(1.5, "Mltiplo de Volume Mnimo", input.double, 1, 5, 0.1)
+}
+
+input_group {
+    "Confirmao",
+    needConfirmation = input(true, "Exigir confirmao", input.plot_visibility),
+    confirmationBars = input(1, "Barras de confirmao", input.integer, 0, 3, 1)
+}
+
+input_group {
+    "Cores e Visualizao",
+    colorLong = input { default = "green", type = input.color },
+    colorShort = input { default = "red", type = input.color },
+    colorFastMA = input { default = "blue", type = input.color },
+    colorSlowMA = input { default = "orange", type = input.color },
+    colorTrendMA = input { default = "purple", type = input.color },
+    showMAs = input(true, "Mostrar Mdias Mveis", input.plot_visibility),
+    showZones = input(true, "Mostrar Zonas", input.plot_visibility)
+}
+
+-- Calcula as mdias mveis
+local ma = useEMA and ema or sma
+local fastMA = ma(close, fastMA_period)
+local slowMA = ma(close, slowMA_period)
+local trendMA = ma(close, trendMA_period)
+
+-- Plota as mdias mveis se ativado
+if showMAs then
+    plot(fastMA, "MA Rpida", colorFastMA, 2)
+    plot(slowMA, "MA Lenta", colorSlowMA, 2)
+    plot(trendMA, "MA Tendncia", colorTrendMA, 3)
+end
+
+-- Funes auxiliares
+local function isUpTrend()
+    return close > trendMA and fastMA > slowMA and slowMA > trendMA
+end
+
+local function isDownTrend()
+    return close < trendMA and fastMA < slowMA and slowMA < trendMA
+end
+
+local function validCandleSize()
+    local bodySize = math.abs(close - open)
+    local range = high - low
+    return bodySize >= (candleBodyPercent/100) * range
+end
+
+local function validVolume()
+    return not useVolumeFilter or volume > sma(volume, 20)[1] * minVolume
+end
+
+local function confirmationSignal(direction)
+    if not needConfirmation then return true end
+    
+    if direction == "long" then
+        for i = 1, confirmationBars do
+            if close[i] > open[i] then return false end
+        end
+        return true
+    else
+        for i = 1, confirmationBars do
+            if close[i] < open[i] then return false end
+        end
+        return true
+    end
+end
+
+-- Padres de candlestick
+local function isBullishReversal()
+    local body = close - open
+    local prevBody = close[1] - open[1]
+    
+    return (body > 0 and prevBody < 0 and close > open[1]) or       -- Engolfo de alta
+           (close > open and (low - math.min(open,close)) >= 2*body and validCandleSize())  -- Hammer
+end
+
+local function isBearishReversal()
+    local body = open - close
+    local prevBody = open[1] - close[1]
+    
+    return (body > 0 and prevBody < 0 and close < open[1]) or       -- Engolfo de baixa
+           (close < open and (math.max(open,close) - high) >= 2*body and validCandleSize())  -- Shooting star
+end
+
+-- Condies de entrada
+local buyCondition = validVolume() and isUpTrend() and 
+                    close[1] < fastMA[1] and 
+                    close > fastMA and 
+                    isBullishReversal() and
+                    confirmationSignal("long")
+
+local sellCondition = validVolume() and isDownTrend() and 
+                     close[1] > fastMA[1] and 
+                     close < fastMA and 
+                     isBearishReversal() and
+                     confirmationSignal("short")
+
+-- Plotagem dos sinais
+plot_shape(buyCondition, "Compra", shape_style.triangleup, shape_size.huge, 
+          colorLong, shape_location.belowbar, 0, "BUY", colorLong)
+          
+plot_shape(sellCondition, "Venda", shape_style.triangledown, shape_size.huge, 
+          colorShort, shape_location.abovebar, 0, "SELL", colorShort)
+
+-- rea entre as MAs para visualizao
+if showZones then
+    fill(fastMA, slowMA, "rea MA", fastMA > slowMA and rgba(0, 255, 0, 0.1) or rgba(255, 0, 0, 0.1))
+    
+    -- Adiciona linhas de suporte/resistncia dinmicas
+    local recentHigh = highest(high, 10)
+    local recentLow = lowest(low, 10)
+    plot(recentHigh, "Resistncia", colorShort, 1, style.dashed_line)
+    plot(recentLow, "Suporte", colorLong, 1, style.dashed_line)
+end
+
+-- Alerta sonoro para novos sinais
+alertcondition(buyCondition, "Sinal de Compra", "Sinal de Compra - Trend Pullback")
+alertcondition(sellCondition, "Sinal de Venda", "Sinal de Venda - Trend Pullback")

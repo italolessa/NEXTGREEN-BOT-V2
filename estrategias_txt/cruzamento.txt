@@ -1,0 +1,62 @@
+instrument {
+    name = "CRUZAMENTO MEDIAS CONFIRMADO",
+    short_name = "CMC",
+    overlay = true
+}
+
+-- CONFIGURAES COPIADAS DIRETAMENTE DO ARQUIVO
+input_group {
+    "SMAA", 
+    smaa_color = input{ default = "yellow", type = input.color }
+}
+
+input_group {
+    "SMAB", 
+    smab_color = input{ default = "blue", type = input.color }
+}
+
+input_group {
+    "Compra", 
+    up_color = input{ default = "green", type = input.color }
+}
+
+input_group {
+    "Venda", 
+    down_color = input{ default = "red", type = input.color }
+}
+
+-- CLCULOS COPIADOS DO ARQUIVO ORIGINAL
+smaa = ema(close, 5)  -- Mdia rpida (5 perodos)
+smab = ema(close, 10) -- Mdia lenta (10 perodos)
+
+-- SINAIS DE COMPRA/VENDA (MESMA LGICA DO ARQUIVO)
+compra = (smaa > smab) and (smaa[1] < smab[1])
+venda = (smaa < smab) and (smaa[1] > smab[1])
+
+-- PLOTAGEM COPIADA DO ARQUIVO ORIGINAL (GARANTIDO QUE FUNCIONA)
+plot(smaa, "Mdia Rpida", smaa_color)
+plot(smab, "Mdia Lenta", smab_color)
+
+plot_shape(
+    compra,
+    "COMPRA",
+    shape_style.arrowup,
+    shape_size.auto,
+    up_color,
+    shape_location.belowbar, 
+    0,
+    "COMPRA",
+    "green"
+)
+
+plot_shape(
+    venda,
+    "VENDA",
+    shape_style.arrowdown,
+    shape_size.auto,
+    down_color,
+    shape_location.abovebar, 
+    0,
+    "VENDA",
+    "red"
+)   

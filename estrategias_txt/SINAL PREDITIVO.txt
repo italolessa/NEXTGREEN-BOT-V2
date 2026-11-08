@@ -1,0 +1,149 @@
+instrument {
+    name = 'ENGOLE + WYCKOFF + PREDITIVO',
+    short_name = 'ENG+WYCK+PRED',
+    icon = 'indicators:BB',
+    overlay = true
+}
+
+input_group {
+    "Sinais de CONFLUENCIA",
+    colorBuy = input { default = "#00FF00", type = input.color },
+    colorSell = input { default = "#FF0000", type = input.color },
+    visibleBuy = input { default = true, type = input.plot_visibility },
+    visibleSell = input { default = true, type = input.plot_visibility }
+}
+
+input_group {
+    "Configuracoes do Preditor",
+    usarPreditor = input { default = true, type = input.bool, text = "Usar Sinais Preditivos (ANTECIPA)" },
+    sensibilidade = input { default = 50, min = 1, max = 100, type = input.integer, text = "Sensibilidade (1=mais sinais, 100=menos sinais)" }
+}
+
+-- ============================================
+-- MÉDIAS MÓVEIS (WYCKOFF)
+-- ============================================
+ma9 = sma(close, 9)
+ma21 = sma(close, 21)
+
+-- ============================================
+-- ENGOLE (CONFIRMAÇÃO)
+-- ============================================
+engolfo_alta = (close > open and close[1] < open[1] and close > high[1])
+engolfo_baixa = (close < open and close[1] > open[1] and close < low[1])
+
+wyckoff_compra = ma9 > ma21
+wyckoff_venda = ma9 < ma21
+
+-- ============================================
+-- SINAIS PREDITIVOS ANTECIPADOS
+-- ============================================
+
+-- 1. PREDICTOR DE GAP (abertura acima/abaixo da vela anterior)
+gap_up = open > high[1]
+gap_down = open < low[1]
+
+-- 2. PREDICTOR DE MOMENTUM INICIAL
+range_atual = high - low
+movimento_buy = (close - open) > (range_atual * 0.6) and close > open
+movimento_sell = (open - close) > (range_atual * 0.6) and close < open
+
+-- 3. PREDICTOR DE SUCESSÃO (vela segue direção da anterior)
+sucessao_buy = close > open and close[1] > open[1]
+sucessao_sell = close < open and close[1] < open[1]
+
+-- 4. PREDICTOR DE REVERSÃO RÁPIDA (RSI de 3 períodos)
+rsi3 = rsi(close, 3)
+reversao_buy = rsi3 < 25
+reversao_sell = rsi3 > 75
+
+-- 5. PREDICTOR DE VOLUME
+volume_medio = sma(volume, 20)
+volume_alto = volume > volume_medio * 1.3
+
+-- ============================================
+-- CÁLCULO DO SINAL PREDITIVO
+-- ============================================
+
+pontuacao_buy = 0
+pontuacao_sell = 0
+
+-- Pontuação para COMPRA
+if gap_up then pontuacao_buy = pontuacao_buy + 30 end
+if movimento_buy then pontuacao_buy = pontuacao_buy + 40 end
+if sucessao_buy then pontuacao_buy = pontuacao_buy + 25 end
+if reversao_buy then pontuacao_buy = pontuacao_buy + 45 end
+if volume_alto and (movimento_buy or sucessao_buy) then pontuacao_buy = pontuacao_buy + 20 end
+
+-- Pontuação para VENDA
+if gap_down then pontuacao_sell = pontuacao_sell + 30 end
+if movimento_sell then pontuacao_sell = pontuacao_sell + 40 end
+if sucessao_sell then pontuacao_sell = pontuacao_sell + 25 end
+if reversao_sell then pontuacao_sell = pontuacao_sell + 45 end
+if volume_alto and (movimento_sell or sucessao_sell) then pontuacao_sell = pontuacao_sell + 20 end
+
+threshold = 101 - sensibilidade
+
+if usarPreditor then
+    predictive_compra = pontuacao_buy >= threshold
+    predictive_venda = pontuacao_sell >= threshold
+else
+    predictive_compra = false
+    predictive_venda = false
+end
+
+-- ============================================
+-- CONFLUÊNCIA COM SINAIS ANTECIPADOS
+-- ============================================
+
+-- Sinal PREDITIVO (antecipado)
+sinal_preditor_compra = predictive_compra and wyckoff_compra
+sinal_preditor_venda = predictive_venda and wyckoff_venda
+
+-- Sinal HIPER CONFLUÊNCIA (quando o preditor se alinha com o engolfo)
+sinal_hiper_compra = sinal_preditor_compra and engolfo_alta
+sinal_hiper_venda = sinal_preditor_venda and engolfo_baixa
+
+-- ============================================
+-- PLOTAGEM DOS SINAIS
+-- ============================================
+
+-- SINAL HIPER CONFLUÊNCIA (AMARELO) - MAIS CONFIÁVEL
+if visibleBuy and sinal_hiper_compra then
+    plot_shape(true, "HIPER COMPRA", shape_style.triangleup, shape_size.huge, 
+               "#FFD700", shape_location.belowbar, 0, " HIPER ", "#FFD700")
+end
+
+if visibleSell and sinal_hiper_venda then
+    plot_shape(true, "HIPER VENDA", shape_style.triangledown, shape_size.huge, 
+               "#FFD700", shape_location.abovebar, 0, " HIPER ", "#FFD700")
+end
+
+-- SINAL PREDITIVO ANTECIPADO (VERDE/VERMELHO) - APARECE NO INÍCIO
+if visibleBuy and sinal_preditor_compra and not sinal_hiper_compra then
+    plot_shape(true, "PREDITIVO COMPRA", shape_style.triangleup, shape_size.huge, 
+               "#00FF88", shape_location.belowbar, 0, " PRED ", "#00FF88")
+end
+
+if visibleSell and sinal_preditor_venda and not sinal_hiper_venda then
+    plot_shape(true, "PREDITIVO VENDA", shape_style.triangledown, shape_size.huge, 
+               "#FF4444", shape_location.abovebar, 0, " PRED ", "#FF4444")
+end
+
+-- ============================================
+-- PLOTAGEM DAS MÉDIAS
+-- ============================================
+plot(ma9, "MA9", "#0080FF", 1)
+plot(ma21, "MA21", "#FFA500", 1)
+
+-- ============================================
+-- PAINEL DE FORÇA DO SINAL
+-- ============================================
+if usarPreditor and (visibleBuy or visibleSell) then
+    if pontuacao_buy >= 50 then
+        plot_shape(true, "FORCA:" .. pontuacao_buy, shape_style.label, shape_size.small, 
+                   "#00FF00", shape_location.abovebar, 3, " FORCA ", "#00FF00")
+    elseif pontuacao_sell >= 50 then
+        plot_shape(true, "FORCA:" .. pontuacao_sell, shape_style.label, shape_size.small, 
+                   "#FF0000", shape_location.abovebar, 3, " FORCA ", "#FF0000")
+    end
+end

@@ -1,0 +1,152 @@
+instrument {
+    name = 'Ale22rta_5+_Volume_Combinado',
+    short_name = 'A5V_Comb',
+    overlay = true,
+    icon = "indicators:ADX"
+}
+
+-- ============================================================
+-- PARAMETROS DAS EMAS
+-- ============================================================
+MaFast_period = input(9, "EMA Rapida", input.integer, 1, 100, 1)
+MaSlow_period = input(34, "EMA Lenta", input.integer, 1, 100, 1)
+
+-- ============================================================
+-- PARAMETROS DAS 5 CONFIRMAES
+-- ============================================================
+ema9_period   = input(9,  "EMA 9 Periodo",   input.integer, 1, 1000, 1)
+ema21_period  = input(21, "EMA 21 Periodo",  input.integer, 1, 1000, 1)
+ema50_period  = input(50, "EMA 50 Periodo",  input.integer, 1, 1000, 1)
+rsi_period    = input(14, "Periodo RSI",     input.integer, 1, 100,  1)
+
+-- ============================================================
+-- PARAMETROS DO FILTRO DE EXAUSTO
+-- ============================================================
+input_group {
+    "FILTRO DE EXAUSTO",
+    ativar_filtro = input(true, " ATIVAR FILTRO DE EXAUSTO", input.bool),
+    sensibilidade = input(0.002, " SENSIBILIDADE (0.001=Alta | 0.010=Baixa)", input.float, 0.0005, 0.020, 0.0005),
+    mostrar_fundo = input(true, " MOSTRAR FUNDO COLORIDO", input.bool),
+    mostrar_x_vermelho = input(true, " MOSTRAR X VERMELHO (bloqueio)", input.bool)
+}
+
+input_group {
+    "Cores",
+    colorBuy = input { default = "#00FF00", type = input.color },
+    colorSell = input { default = "#FF0000", type = input.color },
+    colorAlert = input { default = "#FFFF00", type = input.color },
+    colorExaustao = input { default = "#FF00FF", type = input.color }
+}
+
+-- ============================================================
+-- CONFIRMAO 1: ALINHAMENTO DAS 3 EMAs
+-- ============================================================
+ema9  = ema(close, ema9_period)
+ema21 = ema(close, ema21_period)
+ema50 = ema(close, ema50_period)
+
+emas_alta  = ema9 > ema21 and ema21 > ema50
+emas_baixa = ema9 < ema21 and ema21 < ema50
+
+-- ============================================================
+-- CONFIRMAO 2: RSI
+-- ============================================================
+rsi_val  = rsi(close, rsi_period)
+rsi_buy  = rsi_val < 70
+rsi_sell = rsi_val > 30
+
+-- ============================================================
+-- CONFIRMAO 3: PRESSO DA VELA
+-- ============================================================
+pressao_up   = close > (high + low) / 2
+pressao_down = close < (high + low) / 2
+
+-- ============================================================
+-- CONFIRMAO 4: INCLINAO DAS MDIAS
+-- ============================================================
+inclinacao_buy  = ema9 > ema9[1] and ema21 > ema21[1]
+inclinacao_sell = ema9 < ema9[1] and ema21 < ema21[1]
+
+-- ============================================================
+-- CONFIRMAO 5: PREO ACIMA/ABAIXO DA EMA 50
+-- ============================================================
+tendencia_alta  = close > ema50
+tendencia_baixa = close < ema50
+
+-- ============================================================
+-- CONDIO DO ALERTA 5+ (TODAS AS 5 CONFIRMAES)
+-- ============================================================
+alerta5_call = emas_alta and rsi_buy and pressao_up and inclinacao_buy and tendencia_alta
+alerta5_put  = emas_baixa and rsi_sell and pressao_down and inclinacao_sell and tendencia_baixa
+
+-- ============================================================
+-- CONDIO DO VOLUME ATIVO (ENGULFING)
+-- ============================================================
+engulfing_call = (close[1] < open[1]) and (close > open) and (close > high[1]) and (close[1] >= open)
+engulfing_put = (close[1] > open[1]) and (close < open) and (close < low[1]) and (close[1] <= open)
+
+-- ============================================================
+-- SINAL COMBINADO ORIGINAL (SEM FILTRO)
+-- ============================================================
+sinal_call_original = alerta5_call and engulfing_call
+sinal_put_original = alerta5_put and engulfing_put
+
+-- ============================================================
+-- FILTRO DE EXAUSTO (COM SENSIBILIDADE AJUSTVEL)
+-- ============================================================
+distancia = close - ema50
+
+-- Usa a sensibilidade escolhida pelo usurio
+if ativar_filtro then
+    exaustao = distancia > sensibilidade or distancia < -sensibilidade
+else
+    exaustao = false
+end
+
+-- ============================================================
+-- SINAL COM FILTRO
+-- ============================================================
+sinal_call_combinado = sinal_call_original and not exaustao
+sinal_put_combinado = sinal_put_original and not exaustao
+
+-- ============================================================
+-- PR-ALERTA
+-- ============================================================
+preAlert_call = alerta5_call and not engulfing_call
+preAlert_put = alerta5_put and not engulfing_put
+
+-- ============================================================
+-- PLOT DAS EMAS
+-- ============================================================
+emaFast = ema(close, MaFast_period)
+emaSlow = ema(close, MaSlow_period)
+
+plot(emaFast, "EMA Rapida", "#FFD700", 1)
+plot(emaSlow, "EMA Lenta", "#FFA500", 2)
+
+-- ============================================================
+-- PLOT PR-ALERTA (bolinha amarela)
+-- ============================================================
+plot_shape(preAlert_call, "PRE_CALL", shape_style.circle, shape_size.small, colorAlert, shape_location.belowbar, -1, "AGUARDANDO CALL", "black")
+plot_shape(preAlert_put, "PRE_PUT", shape_style.circle, shape_size.small, colorAlert, shape_location.abovebar, -1, "AGUARDANDO PUT", "black")
+
+-- ============================================================
+-- PLOT EXAUSTO (X vermelho) - mostra quando o filtro bloqueou
+-- ============================================================
+if mostrar_x_vermelho then
+    plot_shape(sinal_call_original and exaustao, "EXAUSTAO_CALL", shape_style.cross, shape_size.large, colorExaustao, shape_location.belowbar, 0, " EXAUSTO - BLOQUEADO", "white")
+    plot_shape(sinal_put_original and exaustao, "EXAUSTAO_PUT", shape_style.cross, shape_size.large, colorExaustao, shape_location.abovebar, 0, " EXAUSTO - BLOQUEADO", "white")
+end
+
+-- ============================================================
+-- PLOT SINAL COMBINADO (tringulo)
+-- ============================================================
+plot_shape(sinal_call_combinado, "CALL", shape_style.triangleup, shape_size.huge, colorBuy, shape_location.belowbar, 0, " CALL", "white")
+plot_shape(sinal_put_combinado, "PUT", shape_style.triangledown, shape_size.huge, colorSell, shape_location.abovebar, 0, " PUT", "white")
+
+-- ============================================================
+-- PLOT FUNDO COLORIDO NA EXAUSTO
+-- ============================================================
+if mostrar_fundo then
+    bgcolor(exaustao, colorExaustao, 40)
+end

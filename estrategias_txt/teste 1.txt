@@ -1,0 +1,76 @@
+instrument {
+    name = 'CANDLE BIBLE ESSENTIAL',
+    short_name = 'CBE-ENG',
+    icon = 'indicators:BB',
+    overlay = true
+}
+
+-- CONFIGURAO SIMPLIFICADA (MANTENDO O ESSENCIAL DO ORIGINAL)
+MaFast_period = input(9,"Ma Fast period",input.integer,1,1000,1)
+MaSlow_period = input(21,"Ma Slow period",input.integer,1,1000,1)
+MaTrend_period = input(200,"Ma Trend period",input.integer,1,1000,5)
+
+-- GRUPOS DE INPUT (ESTILO ORIGINAL)
+input_group {
+    "Sinais de Compra",
+    colorBuy = input { default = "#00FF00", type = input.color },
+    visibleBuy = input { default = true, type = input.plot_visibility }
+}
+
+input_group {
+    "Sinais de Venda",
+    colorSell = input { default = "#FF0000", type = input.color },
+    visibleSell = input { default = true, type = input.plot_visibility }
+}
+
+-- CLCULOS BSICOS
+MaFast = ema(close, MaFast_period)
+MaSlow = ema(close, MaSlow_period)
+MaTrend = ema(close, MaTrend_period)
+
+-- DETECO DE PADRES (APENAS OS 2 MAIS CONFIVEIS)
+isBuySignal = (
+    close > open and                          -- Candle de alta
+    close > MaFast and MaFast > MaSlow and    -- Tendncia de alta
+    close[1] < open[1] and                    -- Candle anterior de baixa
+    close > high[1]                           -- Rompeu a mxima anterior
+)
+
+isSellSignal = (
+    close < open and                          -- Candle de baixa
+    close < MaFast and MaFast < MaSlow and    -- Tendncia de baixa
+    close[1] > open[1] and                    -- Candle anterior de alta
+    close < low[1]                            -- Rompeu a mnima anterior
+)
+
+-- PLOTAGEM (COPIA EXATA DA ESTRUTURA ORIGINAL)
+if visibleBuy then
+    plot_shape(isBuySignal,
+        "COMPRA",
+        shape_style.triangleup,
+        shape_size.huge,
+        colorBuy,
+        shape_location.belowbar,
+        0,
+        "CBE",
+        colorBuy  
+    ) 
+end
+
+if visibleSell then
+    plot_shape(isSellSignal,
+        "VENDA",
+        shape_style.triangledown,
+        shape_size.huge,
+        colorSell,
+        shape_location.abovebar,
+        0,
+        "CBE",
+        colorSell
+    )
+end
+
+-- PLOT DAS MDIAS (OPCIONAL)
+plot(MaFast, "EMA Rpida", #f77902, 1)
+plot(MaSlow, "EMA Lenta", #f77902, 1)
+plot(MaTrend, "EMA Tendncia", #b59704, 2)

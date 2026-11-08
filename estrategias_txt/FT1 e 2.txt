@@ -1,0 +1,203 @@
+-- Instrumento 1: TARGET FT1 2024
+instrument {
+    overlay = true,
+    name = 'TARGET FT1 2024',
+    short_name = 'TARGET FT1 2024',
+    icon = "indicators:ADX"
+}
+
+input_group {
+    "FT1 - UP COLOR",
+    call_color = input { default = "#39FF14", type = input.color }
+}
+
+input_group {
+    "FT1 - DOWN COLOR",
+    put_color = input { default = "#FF0000", type = input.color }
+}
+
+if (close > close[1]) and (close[1] > open[2]) and (close[3] > close[2]) then
+    plot_shape(1, 'Bull_FT1', shape_style.arrowup, shape_size.huge, call_color, shape_location.belowbar, 0, "FT BUY", call_color)
+elseif (close < close[1]) and (close[1] < open[2]) and (close[3] < close[2]) then
+    plot_shape(1, 'Bear_FT1', shape_style.arrowdown, shape_size.huge, put_color, shape_location.abovebar, 0, "FT SELL", put_color)
+end
+
+-- Instrumento 2: TARGET FT2 2024
+instrument {
+    name = "TARGET FT2 2024",
+    overlay = true
+}
+
+input_group {
+    "MACD",
+    "Slow and fast EMA periods, used in MACD calculation",
+    fast = input(12, "front.platform.fast period", input.integer, 1, 250),
+    slow = input(26, "front.platform.fast period", input.integer, 1, 250)
+}
+
+input_group {
+    "front.platform.signal-line",
+    "Reference signal series period",
+    signal_period = input(9, "front.period", input.integer, 1, 250)
+}
+
+input_group {
+    "front.newind.emaperiod",
+    ema_period = input(13, "front.period", input.integer, 1, 250)
+}
+
+input_group {
+    "front.newind.barcolors",
+    positive = input { default = "#2CAC40", type = input.color },
+    neutral = input { default = "#0F0F0F", type = input.color },
+    negative = input { default = "#DB4931", type = input.color }
+}
+
+fastMA = ema(close, fast)
+slowMA = ema(close, slow)
+macd = fastMA - slowMA
+signal = sma(macd, signal_period)
+hist = macd - signal
+ema13 = ema(close, ema_period)
+
+local bar_color
+if ema13 > ema13[1] and hist > hist[1] then
+    bar_color = positive
+elseif ema13 < ema13[1] and hist < hist[1] then
+    bar_color = negative
+else
+    bar_color = neutral
+end
+
+plot_candle(open, high, low, close, "ES", bar_color)
+
+-- Instrumento 3: HackerOB 1min2
+instrument {
+    name = "HackerOB 1min2",
+    icon = "indicators:ADX",
+    overlay = true
+}
+
+-- Seleção de Método
+method_id = input(1, "Type", input.string_selection, { "TOP" })
+
+-- Configurações de Níveis
+input_group {
+    "Maxima",
+    level_1_color = input { default = "red", type = input.color },
+    level_1_width = input { default = 2, type = input.line_width }
+}
+
+input_group {
+    "Minima",
+    level_2_color = input { default = "green", type = input.color },
+    level_2_width = input { default = 2, type = input.line_width }
+}
+
+local function m1(candle)
+    return candle.high, candle.low
+end
+
+local methods = { m1 }
+
+-- Resolução de 1 minuto
+local resolution = "30m"
+sec = security(current_ticker_id, resolution)
+
+if sec then
+    local method = methods[method_id]
+    local c1, c2 = method(sec)
+    plot(c1, "C1", level_1_color, level_1_width, 0, style.levels, na_mode.continue)
+    plot(c2, "C2", level_2_color, level_2_width, 0, style.levels, na_mode.continue)
+end
+
+-- Exibição de Bandas e Médias Móveis
+Exibir_tracamento = input(1, "Deseja exibir o tracamento?", input.string_selection, { "SIM", "NAO" })
+
+input_group {
+    "BANDA SUPERIOR",
+    bbsup_color = input { default = "silver", type = input.color }
+}
+
+input_group {
+    "BANDA INFERIOR",
+    bbinf_color = input { default = "silver", type = input.color }
+}
+
+-- Cálculo de Bandas e Médias Móveis
+smaa = sma(close, 20)
+upper_band = smaa + (stdev(close, 20) * 2.0)
+lower_band = smaa - (stdev(close, 20) * 2.0)
+emaa = ema(close, 50)
+
+if Exibir_tracamento == 1 then
+    plot(emaa, "EMA", emaa_color)
+    plot(upper_band, "UPPER_BAND", bbsup_color)
+    plot(lower_band, "LOWER_BAND", bbinf_color)
+end
+
+-- Configurações de Médias Móveis e Períodos
+MaFast_period = input(5, "Ma Fast period", input.integer, 1, 1000, 1)
+MaValue = input(5, "Ma Value", input.string_selection, inputs.titles)
+MaSlow_period = input(20, "Ma Slow period", input.integer, 1, 1000, 1)
+Signal_period = input(5, "Signal period", input.integer, 1, 1000, 1)
+
+-- Configurações de Compra e Venda
+input_group {
+    "Compra",
+    colorBuy = input { default = "yellow", type = input.color },
+    visibleBuy = input { default = true, type = input.plot_visibility }
+}
+
+input_group {
+    "Venda",
+    colorSell = input { default = "yellow", type = input.color },
+    visibleSell = input { default = true, type = input.plot_visibility }
+}
+
+-- Cálculo de Buffers
+smaFast = sma(close, MaFast_period)
+smaSlow = sma(close, MaSlow_period)
+buffer1 = smaFast - smaSlow
+buffer2 = wma(buffer1, Signal_period)
+
+-- Filtros de Tendência
+trendFilter = sma(close, 30)
+
+-- Filtro de RSI
+rsi_value = rsi(close, 10)
+rsi_filter_buy = rsi_value < 30
+rsi_filter_sell = rsi_value > 70
+
+-- Filtro de MACD
+macd_line, signal_line, _ = macd(close, 8, 16, 5)
+macd_filter_buy = macd_line > signal_line
+macd_filter_sell = macd_line < signal_line
+
+-- Filtro de ATR
+atr_value = atr(10)
+atr_threshold = input(1.5, "ATR Threshold", input.float)
+atr_filter = atr_value > atr_threshold
+
+-- Filtro de Volume
+volume_avg = sma(volume, 10)
+volume_filter = volume > volume_avg
+
+-- Filtro de ADX
+adx_value = adx(10)
+adx_filter = adx_value > 25
+
+-- Filtro de Horário de Negociação
+is_trading_hours = (hour >= 9 and hour <= 17)
+
+-- Condições de Compra e Venda
+buyCondition = buffer1 > buffer2 and buffer1[1] < buffer2[1] and close > trendFilter
+sellCondition = buffer1 < buffer2 and buffer1[1] > buffer2[1] and close < trendFilter
+
+-- Debug das Condições
+debug_label("Buy Condition", buyCondition)
+debug_label("Sell Condition", sellCondition)
+
+-- Plotagem de Sinais
+plot_shape(buyCondition and visibleBuy, "COMPRA", shape_style.triangleup, shape_size.large, colorBuy, shape_location.belowbar, -1, "COMPRA", "yellow")
+plot_shape(sellCondition and visibleSell, "VENDA", shape_style.triangledown, shape_size.large, colorSell, shape_location.abovebar, -1, "VENDA", "yellow")

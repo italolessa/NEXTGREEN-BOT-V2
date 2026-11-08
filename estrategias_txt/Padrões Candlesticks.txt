@@ -1,0 +1,546 @@
+
+instrument {
+    name = 'Candlestick Patterns',
+    icon = 'indicators:BelkhayateTiming',
+    overlay = true
+}
+
+--1 Abandoned Baby
+input_group {
+    "Abandoned Baby", "Indicador",
+    AbandonedBabyBullColor  = input { default = rgba(46, 139, 87,0.8), type = input.color }, --SeaGreen color
+    AbandonedBabyBullArrow  = input { default = shape_style.triangleup, type = input.plot_shape_style},
+    AbandonedBabyBearColor  = input { default = rgba(220, 20, 60,0.8), type = input.color }, --Crimson color 
+    AbandonedBabyBearArrow  = input { default = shape_style.triangledown, type = input.plot_shape_style},
+    AbandonedBabyVisible    = input { default = false, type = input.plot_visibility },
+    AbandonedBabySize       = input { default = shape_size.large, type = input.plot_shape_size },
+    
+}
+
+--26 Piercing
+input_group {
+    "Piercing", "Indicador",
+    PiercingBullColor   = input { default = rgba(46, 139, 87,0.8), type = input.color }, --SeaGreen color
+    PiercingBullArrow   = input { default = shape_style.triangleup, type = input.plot_shape_style},
+    PiercingVisible     = input { default = false, type = input.plot_visibility },
+    PiercingSize        = input { default = shape_size.large, type = input.plot_shape_size },
+}
+
+--2 DarkCloudCover
+input_group {
+    "Dark Cloud Cover", "Indicador",
+    DarkCloudCoverBearColor = input { default = rgba(220, 20, 60,0.8), type = input.color }, --Crimson color
+    DarkCloudCoverBearArrow = input { default = shape_style.triangledown, type = input.plot_shape_style},
+    DarkCloudCoverVisible   = input { default = false, type = input.plot_visibility },
+    DarkCloudCoverSize      = input { default = shape_size.large, type = input.plot_shape_size },
+}
+
+--3 Doji
+input_group {
+    "Doji", "Indicador",
+    DojiBullColor   = input { default = rgba(46, 139, 87,0.8), type = input.color }, --SeaGreen color
+    DojiBullArrow   = input { default = shape_style.triangleup, type = input.plot_shape_style},
+    DojiBearColor   = input { default = rgba(220, 20, 60,0.8), type = input.color }, --Crimson color
+    DojiBearArrow   = input { default = shape_style.triangledown, type = input.plot_shape_style},
+    DojiVisible     = input { default = false, type = input.plot_visibility },
+    DojiSize        = input { default = shape_size.large, type = input.plot_shape_size },
+}
+
+--4 DojiStar
+input_group {
+    "Doji Star", "Indicador",
+    DojiStarBullColor   = input { default = rgba(46, 139, 87,0.8), type = input.color }, --SeaGreen color
+    DojiStarBullArrow   = input { default = shape_style.triangleup, type = input.plot_shape_style},
+    DojiStarBearColor   = input { default = rgba(220, 20, 60,0.8), type = input.color }, --Crimson color
+    DojiStarBearArrow   = input { default = shape_style.triangledown, type = input.plot_shape_style},
+    DojiStarVisible     = input { default = false, type = input.plot_visibility },
+    DojiStarSize        = input { default = shape_size.large, type = input.plot_shape_size },
+}
+
+--37 UpsideTasukiGap
+input_group {
+    "Upside Tasuki Gap", "Indicador",
+    UpsideTasukiGapBullColor    = input { default = rgba(46, 139, 87,0.8), type = input.color }, --SeaGreen color
+    UpsideTasukiGapBullArrow    = input { default = shape_style.triangleup, type = input.plot_shape_style},
+    UpsideTasukiGapVisible      = input { default = false, type = input.plot_visibility },
+    UpsideTasukiGapSize         = input { default = shape_size.large, type = input.plot_shape_size },
+}
+
+--5 DownsideTasukiGap
+input_group {
+    "Downside Tasuki Gap", "Indicador",
+    DownsideTasukiGapBearColor  = input { default = rgba(220, 20, 60,0.8), type = input.color }, --Crimson color
+    DownsideTasukiGapBearArrow  = input { default = shape_style.triangledown, type = input.plot_shape_style},
+    DownsideTasukiGapVisible    = input { default = false, type = input.plot_visibility },
+    DownsideTasukiGapSize       = input { default = shape_size.large, type = input.plot_shape_size },
+}
+
+--6 DragonflyDoji
+input_group {
+    "Dragonfly Doji", "Indicador",
+    DragonflyDojiBullColor  = input { default = rgba(46, 139, 87,0.8), type = input.color }, --SeaGreen color
+    DragonflyDojiBullArrow  = input { default = shape_style.triangleup, type = input.plot_shape_style},
+    DragonflyDojiBearColor  = input { default = rgba(220, 20, 60,0.8), type = input.color }, --Crimson color
+    DragonflyDojiBearArrow  = input { default = shape_style.triangledown, type = input.plot_shape_style},
+    DragonflyDojiVisible    = input { default = false, type = input.plot_visibility },
+    DragonflyDojiSize       = input { default = shape_size.large, type = input.plot_shape_size },
+}
+
+--7 Engulfing
+input_group {
+    "Engulfing", "Indicador",
+    EngulfingBullColor  = input { default = rgba(46, 139, 87,0.8), type = input.color }, --SeaGreen color
+    EngulfingBullArrow  = input { default = shape_style.triangleup, type = input.plot_shape_style},
+    EngulfingBearColor  = input { default = rgba(220, 20, 60,0.8), type = input.color }, --Crimson color
+    EngulfingBearArrow  = input { default = shape_style.triangledown, type = input.plot_shape_style},
+    EngulfingVisible    = input { default = false, type = input.plot_visibility },
+    EngulfingSize       = input { default = shape_size.large, type = input.plot_shape_size },
+}
+
+
+--23 MorningDojiStar
+input_group {
+    "Morning Doji Star", "Indicador",
+    MorningDojiStarBullColor    = input { default = rgba(46, 139, 87,0.8), type = input.color }, --SeaGreen color
+    MorningDojiStarBullArrow    = input { default = shape_style.triangleup, type = input.plot_shape_style},
+    MorningDojiStarVisible      = input { default = false, type = input.plot_visibility },
+    MorningDojiStarSize         = input { default = shape_size.large, type = input.plot_shape_size },
+}
+
+--8 EveningDojiStar
+input_group {
+    "Evening Doji Star", "Indicador",
+    EveningDojiStarBearColor    = input { default = rgba(220, 20, 60,0.8), type = input.color }, --Crimson color
+    EveningDojiStarBearArrow    = input { default = shape_style.triangledown, type = input.plot_shape_style},
+    EveningDojiStarVisible      = input { default = false, type = input.plot_visibility },
+    EveningDojiStarSize         = input { default = shape_size.large, type = input.plot_shape_size },
+}
+--24 MorningStar
+input_group {
+    "Morning Star", "Indicador",
+    MorningStarBullColor    = input { default = rgba(46, 139, 87,0.8), type = input.color }, --SeaGreen color
+    MorningStarBullArrow    = input { default = shape_style.triangleup, type = input.plot_shape_style},
+    MorningStarVisible      = input { default = false, type = input.plot_visibility },
+    MorningStarSize         = input { default = shape_size.large, type = input.plot_shape_size },
+}
+
+--9 EveningStar
+input_group {
+    "Evening Star", "Indicador",
+    EveningStarBearColor    = input { default = rgba(220, 20, 60,0.8), type = input.color }, --Crimson color
+    EveningStarBearArrow    = input { default = shape_style.triangledown, type = input.plot_shape_style},
+    EveningStarVisible      = input { default = false, type = input.plot_visibility },
+    EveningStarSize         = input { default = shape_size.large, type = input.plot_shape_size },
+}
+
+
+--27 RisingThreeMethods
+input_group {
+    "Rising Three Methods", "Indicador",
+    RisingThreeMethodsBullColor = input { default = rgba(46, 139, 87,0.8), type = input.color }, --SeaGreen color
+    RisingThreeMethodsBullArrow = input { default = shape_style.triangleup, type = input.plot_shape_style},
+    RisingThreeMethodsVisible   = input { default = false, type = input.plot_visibility },
+    RisingThreeMethodsSize      = input { default = shape_size.large, type = input.plot_shape_size },
+}
+--10 FallingThreeMethods
+input_group {
+    "Falling Three Methods", "Indicador",
+    FallingThreeMethodsBearColor    = input { default = rgba(220, 20, 60,0.8), type = input.color }, --Crimson color
+    FallingThreeMethodsBearArrow    = input { default = shape_style.triangledown, type = input.plot_shape_style},
+    FallingThreeMethodsVisible      = input { default = false, type = input.plot_visibility },
+    FallingThreeMethodsSize         = input { default = shape_size.large, type = input.plot_shape_size },
+}
+
+--28 RisingWindow
+input_group {
+    "Rising Window", "Indicador",
+    RisingWindowBullColor   = input { default = rgba(46, 139, 87,0.8), type = input.color }, --SeaGreen color
+    RisingWindowBullArrow   = input { default = shape_style.triangleup, type = input.plot_shape_style},
+    RisingWindowVisible     = input { default = false, type = input.plot_visibility },
+    RisingWindowSize        = input { default = shape_size.large, type = input.plot_shape_size },
+}
+--11 FallingWindow
+input_group {
+    "Falling Window", "Indicador",
+    FallingWindowBearColor  = input { default = rgba(220, 20, 60,0.8), type = input.color }, --Crimson color
+    FallingWindowBearArrow  = input { default = shape_style.triangledown, type = input.plot_shape_style},
+    FallingWindowVisible    = input { default = false, type = input.plot_visibility },
+    FallingWindowSize       = input { default = shape_size.large, type = input.plot_shape_size },
+}
+
+--12 GravestoneDoji
+input_group {
+    "Gravestone Doji", "Indicador",
+    GravestoneDojiBullColor = input { default = rgba(46, 139, 87,0.8), type = input.color }, --SeaGreen color
+    GravestoneDojiBullArrow = input { default = shape_style.triangleup, type = input.plot_shape_style},
+    GravestoneDojiBearColor = input { default = rgba(220, 20, 60,0.8), type = input.color }, --Crimson color
+    GravestoneDojiBearArrow = input { default = shape_style.triangledown, type = input.plot_shape_style},
+    GravestoneDojiVisible   = input { default = false, type = input.plot_visibility },
+    GravestoneDojiSize      = input { default = shape_size.large, type = input.plot_shape_size },
+}
+
+--13 Hammer
+input_group {
+    "Hammer", "Indicador",
+    HammerBullColor = input { default = rgba(46, 139, 87,0.8), type = input.color }, --SeaGreen color
+    HammerBullArrow = input { default = shape_style.triangleup, type = input.plot_shape_style},
+    HammerBearColor = input { default = rgba(220, 20, 60,0.8), type = input.color }, --Crimson color
+    HammerBearArrow = input { default = shape_style.triangledown, type = input.plot_shape_style},
+    HammerVisible   = input { default = false, type = input.plot_visibility },
+    HammerSize      = input { default = shape_size.large, type = input.plot_shape_size },
+}
+
+--14 HangingMan
+input_group {
+    "Hanging Man", "Indicador",
+    HangingManBullColor = input { default = rgba(46, 139, 87,0.8), type = input.color }, --SeaGreen color
+    HangingManBullArrow = input { default = shape_style.triangleup, type = input.plot_shape_style},
+    HangingManBearColor = input { default = rgba(220, 20, 60,0.8), type = input.color }, --Crimson color
+    HangingManBearArrow = input { default = shape_style.triangledown, type = input.plot_shape_style},
+    HangingManVisible   = input { default = false, type = input.plot_visibility },
+    HangingManSize      = input { default = shape_size.large, type = input.plot_shape_size },
+}
+
+--15 HaramiCross
+input_group {
+    "Harami Cross", "Indicador",
+    HaramiCrossBullColor    = input { default = rgba(46, 139, 87,0.8), type = input.color }, --SeaGreen color
+    HaramiCrossBullArrow    = input { default = shape_style.triangleup, type = input.plot_shape_style},
+    HaramiCrossBearColor    = input { default = rgba(220, 20, 60,0.8), type = input.color }, --Crimson color
+    HaramiCrossBearArrow    = input { default = shape_style.triangledown, type = input.plot_shape_style},
+    HaramiCrossVisible      = input { default = false, type = input.plot_visibility },
+    HaramiCrossSize         = input { default = shape_size.large, type = input.plot_shape_size },
+}
+
+--16 Harami
+input_group {
+    "Harami", "Indicador",
+    HaramiBullColor = input { default = rgba(46, 139, 87,0.8), type = input.color }, --SeaGreen color
+    HaramiBullArrow = input { default = shape_style.triangleup, type = input.plot_shape_style},
+    HaramiBearColor = input { default = rgba(220, 20, 60,0.8), type = input.color }, --Crimson color
+    HaramiBearArrow = input { default = shape_style.triangledown, type = input.plot_shape_style},
+    HaramiVisible   = input { default = false, type = input.plot_visibility },
+    HaramiSize      = input { default = shape_size.large, type = input.plot_shape_size },
+}
+
+--17 InvertedHammer
+input_group {
+    "Inverted Hammer", "Indicador",
+    InvertedHammerBullColor = input { default = rgba(46, 139, 87,0.8), type = input.color }, --SeaGreen color
+    InvertedHammerBullArrow = input { default = shape_style.triangleup, type = input.plot_shape_style},
+    InvertedHammerBearColor = input { default = rgba(220, 20, 60,0.8), type = input.color }, --Crimson color
+    InvertedHammerBearArrow = input { default = shape_style.triangledown, type = input.plot_shape_style},
+    InvertedHammerVisible   = input { default = false, type = input.plot_visibility },
+    InvertedHammerSize      = input { default = shape_size.large, type = input.plot_shape_size },
+}
+
+--18 Kicking
+input_group {
+    "Kicking", "Indicador",
+    KickingBullColor    = input { default = rgba(46, 139, 87,0.8), type = input.color }, --SeaGreen color
+    KickingBullArrow    = input { default = shape_style.triangleup, type = input.plot_shape_style},
+    KickingBearColor    = input { default = rgba(220, 20, 60,0.8), type = input.color }, --Crimson color
+    KickingBearArrow    = input { default = shape_style.triangledown, type = input.plot_shape_style},
+    KickingVisible      = input { default = false, type = input.plot_visibility },
+    KickingSize         = input { default = shape_size.large, type = input.plot_shape_size },
+}
+
+--19 LongLowerShadow
+input_group {
+    "Long Lower Shadow", "Indicador",
+    LongLowerShadowBullColor    = input { default = rgba(46, 139, 87,0.8), type = input.color }, --SeaGreen color
+    LongLowerShadowBullArrow    = input { default = shape_style.triangleup, type = input.plot_shape_style},
+    LongLowerShadowBearColor    = input { default = rgba(220, 20, 60,0.8), type = input.color }, --Crimson color
+    LongLowerShadowBearArrow    = input { default = shape_style.triangledown, type = input.plot_shape_style},
+    LongLowerShadowVisible      = input { default = false, type = input.plot_visibility },
+    LongLowerShadowSize         = input { default = shape_size.large, type = input.plot_shape_size },
+}
+
+--20 LongUpperShadow
+input_group {
+    "Long Upper Shadow", "Indicador",
+    LongUpperShadowBullColor    = input { default = rgba(46, 139, 87,0.8), type = input.color }, --SeaGreen color
+    LongUpperShadowBullArrow    = input { default = shape_style.triangleup, type = input.plot_shape_style},
+    LongUpperShadowBearColor    = input { default = rgba(220, 20, 60,0.8), type = input.color }, --Crimson color
+    LongUpperShadowBearArrow    = input { default = shape_style.triangledown, type = input.plot_shape_style},
+    LongUpperShadowVisible      = input { default = false, type = input.plot_visibility },
+    LongUpperShadowSize         = input { default = shape_size.large, type = input.plot_shape_size },
+}
+
+--21 MarubozuBlack
+input_group {
+    "Marubozu", "Indicador",
+    MarubozuBullColor   = input { default = rgba(46, 139, 87,0.8), type = input.color }, --SeaGreen color
+    MarubozuBullArrow   = input { default = shape_style.triangleup, type = input.plot_shape_style},
+    MarubozuBearColor   = input { default = rgba(220, 20, 60,0.8), type = input.color }, --Crimson color
+    MarubozuBearArrow   = input { default = shape_style.triangledown, type = input.plot_shape_style},
+    MarubozuVisible     = input { default = false, type = input.plot_visibility },
+    MarubozuSize        = input { default = shape_size.large, type = input.plot_shape_size },
+}
+
+
+--25 OnNeck
+input_group {
+    "OnNeck", "Indicador",
+    OnNeckBullColor = input { default = rgba(46, 139, 87,0.8), type = input.color }, --SeaGreen color
+    OnNeckBullArrow = input { default = shape_style.triangleup, type = input.plot_shape_style},
+    OnNeckBearColor = input { default = rgba(220, 20, 60,0.8), type = input.color }, --Crimson color
+    OnNeckBearArrow = input { default = shape_style.triangledown, type = input.plot_shape_style},
+    OnNeckVisible   = input { default = false, type = input.plot_visibility },
+    OnNeckSize      = input { default = shape_size.large, type = input.plot_shape_size },
+}
+
+--29 ShootingStar
+input_group {
+    "Shooting Star", "Indicador",
+    ShootingStarBullColor   = input { default = rgba(46, 139, 87,0.8), type = input.color }, --SeaGreen color
+    ShootingStarBullArrow   = input { default = shape_style.triangleup, type = input.plot_shape_style},
+    ShootingStarBearColor   = input { default = rgba(220, 20, 60,0.8), type = input.color }, --Crimson color
+    ShootingStarBearArrow   = input { default = shape_style.triangledown, type = input.plot_shape_style},
+    ShootingStarVisible     = input { default = false, type = input.plot_visibility },
+    ShootingStarSize        = input { default = shape_size.large, type = input.plot_shape_size },
+}
+
+--30 Spinning Top
+input_group {
+    "Spinning Top", "Indicador",
+    SpinningTopBullColor   = input { default = rgba(46, 139, 87,0.8), type = input.color }, --SeaGreen color
+    SpinningTopBullArrow   = input { default = shape_style.triangleup, type = input.plot_shape_style},
+    SpinningTopBearColor   = input { default = rgba(220, 20, 60,0.8), type = input.color }, --Crimson color
+    SpinningTopBearArrow   = input { default = shape_style.triangledown, type = input.plot_shape_style},
+    SpinningTopVisible     = input { default = false, type = input.plot_visibility },
+    SpinningTopSize        = input { default = shape_size.large, type = input.plot_shape_size },
+}
+
+--32 ThreeBlackCrows
+input_group {
+    "Three Black Crows", "Indicador",
+    ThreeBlackCrowsBearColor    = input { default = rgba(220, 20, 60,0.8), type = input.color }, --Crimson color
+    ThreeBlackCrowsBearArrow    = input { default = shape_style.triangledown, type = input.plot_shape_style},
+    ThreeBlackCrowsVisible      = input { default = false, type = input.plot_visibility },
+    ThreeBlackCrowsSize         = input { default = shape_size.large, type = input.plot_shape_size },
+}
+
+--33 ThreeWhiteSoldiers
+input_group {
+    "Three White Soldiers", "Indicador",
+    ThreeWhiteSoldiersBullColor = input { default = rgba(46, 139, 87,0.8), type = input.color }, --SeaGreen color
+    ThreeWhiteSoldiersBullArrow = input { default = shape_style.triangleup, type = input.plot_shape_style},
+    ThreeWhiteSoldiersVisible   = input { default = false, type = input.plot_visibility },
+    ThreeWhiteSoldiersSize      = input { default = shape_size.large, type = input.plot_shape_size },
+}
+
+--34 TriStar
+input_group {
+    "Tri Star", "Indicador",
+    TriStarBullColor    = input { default = rgba(46, 139, 87,0.8), type = input.color }, --SeaGreen color
+    TriStarBullArrow    = input { default = shape_style.triangleup, type = input.plot_shape_style},
+    TriStarBearColor    = input { default = rgba(220, 20, 60,0.8), type = input.color }, --Crimson color
+    TriStarBearArrow    = input { default = shape_style.triangledown, type = input.plot_shape_style},
+    TriStarVisible      = input { default = false, type = input.plot_visibility },
+    TriStarSize         = input { default = shape_size.large, type = input.plot_shape_size },
+}
+
+--35 TweezerBottom
+input_group {
+    "Tweezer Bottom", "Indicador",
+    TweezerBottomBullColor  = input { default = rgba(46, 139, 87,0.8), type = input.color }, --SeaGreen color
+    TweezerBottomBullArrow  = input { default = shape_style.triangleup, type = input.plot_shape_style},
+    TweezerBottomBearColor  = input { default = rgba(220, 20, 60,0.8), type = input.color }, --Crimson color
+    TweezerBottomBearArrow  = input { default = shape_style.triangledown, type = input.plot_shape_style},
+    TweezerBottomVisible    = input { default = false, type = input.plot_visibility },
+    TweezerBottomSize       = input { default = shape_size.large, type = input.plot_shape_size },
+}
+ 
+--36 TweezerTop
+input_group {
+    "Tweezer Top", "Indicador",
+    TweezerTopBullColor = input { default = rgba(46, 139, 87,0.8), type = input.color }, --SeaGreen color
+    TweezerTopBullArrow = input { default = shape_style.triangleup, type = input.plot_shape_style},
+    TweezerTopBearColor = input { default = rgba(220, 20, 60,0.8), type = input.color }, --Crimson color
+    TweezerTopBearArrow = input { default = shape_style.triangledown, type = input.plot_shape_style},
+    TweezerTopVisible   = input { default = false, type = input.plot_visibility },
+    TweezerTopSize      = input { default = shape_size.large, type = input.plot_shape_size },
+}
+
+--Calculate
+AbandonedBabyBull = AbandonedBabyVisible and open[1] == close[1] and open[2] > close[2] and open < close and close > (high[2] + low[2])*0.5 and close[2] < (high+low)*0.5
+AbandonedBabyBear = AbandonedBabyVisible and open[1] == close[1] and open[2] < close[2] and open > close and close < (high[2] + low[2])*0.5 and close[2] > (high+low)*0.5
+plot_shape(AbandonedBabyBull,"AbandonedBabyBull", AbandonedBabyBullArrow, AbandonedBabySize, AbandonedBabyBullColor, shape_location.belowbar, 0, "ab", AbandonedBabyBullColor)
+plot_shape(AbandonedBabyBear,"AbandonedBabyBear", AbandonedBabyBearArrow, AbandonedBabySize, AbandonedBabyBearColor, shape_location.abovebar, 0, "ab", AbandonedBabyBearColor)
+
+PiercingBull             = PiercingVisible and open[1] > close[1] and open < close and close > (high[1]+low[1])*0.5 and close[1] < (high+low)*0.5 and open <= close[1] and low <= low[1]
+DarkCloudCoverBear = DarkCloudCoverVisible and open[1] < close[1] and open > close and close < (high[1]+low[1])*0.5 and close[1] > (high+low)*0.5 and open >= close[1] and low >= low[1]
+plot_shape(PiercingBull,"PiercingBull", PiercingBullArrow, PiercingSize,PiercingBullColor, shape_location.belowbar, 0, "pc", PiercingBullColor)
+plot_shape(DarkCloudCoverBear,"DarkCloudCoverBear", DarkCloudCoverBearArrow, DarkCloudCoverSize,DarkCloudCoverBearColor, shape_location.abovebar, 0, "dc", DarkCloudCoverBearColor)
+
+DojiBull = DojiVisible and open == close and iff(open[1] == close[1], open[2] > close[2], open[1] > close[1])
+DojiBear = DojiVisible and open == close and iff(open[1] == close[1], open[2] < close[2], open[1] < close[1])
+plot_shape(DojiBull,"DojiBull", DojiBullArrow, DojiSize,DojiBullColor, shape_location.belowbar, 0, "dj", DojiBullColor)
+plot_shape(DojiBear,"DojiBear", DojiBearArrow, DojiSize,DojiBearColor, shape_location.abovebar, 0, "dj", DojiBearColor)
+
+DojiStarBull = DojiStarVisible and open == close and high-max(open,close) == min(open,close)-low and iff(open[1] == close[1], open[2] > close[2], open[1] > close[1])
+DojiStarBear = DojiStarVisible and open == close and high-max(open,close) == min(open,close)-low and iff(open[1] == close[1], open[2] < close[2], open[1] < close[1])
+plot_shape(DojiStarBull,"DojiStarBull", DojiStarBullArrow, DojiStarSize,DojiStarBullColor, shape_location.belowbar, 0, "djs", DojiStarBullColor)
+plot_shape(DojiStarBear,"DojiStarBear", DojiStarBearArrow, DojiStarSize,DojiStarBearColor, shape_location.abovebar, 0, "djs", DojiStarBearColor)
+
+UpsideTasukiGapBull = UpsideTasukiGapVisible     and open[2] < close[2] and open[1] < close[1] and open > close and 
+                      low[1] > high[2]+(abs(open[2]-close[2])*0.3) and low >= high[2]
+DownsideTasukiGapBear = DownsideTasukiGapVisible and open[2] > close[2] and open[1] > close[1] and open < close and 
+                      high[1] < low[2]-(abs(open[2]-close[2])*0.3) and high <= low[2]
+plot_shape(UpsideTasukiGapBull,"UpsideTasukiGapBull", UpsideTasukiGapBullArrow, UpsideTasukiGapSize,UpsideTasukiGapBullColor, shape_location.belowbar, 0, "ut", UpsideTasukiGapBullColor)
+plot_shape(DownsideTasukiGapBear,"DownsideTasukiGapBear", DownsideTasukiGapBearArrow, DownsideTasukiGapSize,DownsideTasukiGapBearColor, shape_location.abovebar, 0, "ds", DownsideTasukiGapBearColor)
+
+DragonflyDojiBull = DragonflyDojiVisible and open == close and high-max(open,close) < 0.3 * (min(open,close)-low) and 
+                    iff(open[1] == close[1], open[2] > close[2], open[1] > close[1])
+DragonflyDojiBear = DragonflyDojiVisible and open == close and high-max(open,close) < 0.3 * (min(open,close)-low) and 
+                    iff(open[1] == close[1], open[2] < close[2], open[1] < close[1])
+plot_shape(DragonflyDojiBull,"DragonflyDojiBull", DragonflyDojiBullArrow, DragonflyDojiSize,DragonflyDojiBullColor, shape_location.belowbar, 0, "dg", DragonflyDojiBullColor)
+plot_shape(DragonflyDojiBear,"DragonflyDojiBear", DragonflyDojiBearArrow, DragonflyDojiSize,DragonflyDojiBearColor, shape_location.abovebar, 0, "dg", DragonflyDojiBearColor)
+
+EngulfingBull = EngulfingVisible and open[1] > close[1] and open < close and close > open[1] and open < close[1] and abs(open-close) > abs(open[1]-close[1])  
+EngulfingBear = EngulfingVisible and open[1] < close[1] and open > close and close < open[1] and open > close[1] and abs(open-close) > abs(open[1]-close[1])  
+plot_shape(EngulfingBull,"EngulfingBull", EngulfingBullArrow, EngulfingSize,EngulfingBullColor, shape_location.belowbar, 0, "eg", EngulfingBullColor)
+plot_shape(EngulfingBear,"EngulfingBear", EngulfingBearArrow, EngulfingSize,EngulfingBearColor, shape_location.abovebar, 0, "eg", EngulfingBearColor)
+
+MorningDojiStarBull = MorningDojiStarVisible and open[2] > close[2] and open[1] == close[1] and open < close and close > 0.5*(high+low) 
+EveningDojiStarBear = EveningDojiStarVisible and open[2] < close[2] and open[1] == close[1] and open > close and close < 0.5*(high+low)
+plot_shape(MorningDojiStarBull,"MorningDojiStarBull", MorningDojiStarBullArrow, MorningDojiStarSize,MorningDojiStarBullColor, shape_location.belowbar, 0, "md", MorningDojiStarBullColor)
+plot_shape(EveningDojiStarBear,"EveningDojiStarBear", EveningDojiStarBearArrow, EveningDojiStarSize,EveningDojiStarBearColor, shape_location.abovebar, 0, "ed", EveningDojiStarBearColor)
+
+MorningStarBull = MorningStarVisible and open[2] > close[2] and abs(open[1]-close[1]) < 0.3 * (abs(open-close)) and 
+                  abs(open[1]-close[1]) < 0.3 * (abs(open[2]-close[2])) and open < close and close > 0.5*(high+low) and open[1] ~= close[1]
+EveningStarBear = EveningStarVisible and open[2] < close[2] and abs(open[1]-close[1]) < 0.3 * (abs(open-close)) and  
+                  abs(open[1]-close[1]) < 0.3 * (abs(open[2]-close[2])) and open > close and close < 0.5*(high+low) and open[1] ~= close[1]
+plot_shape(MorningStarBull,"MorningStarBull", MorningStarBullArrow, MorningStarSize,MorningStarBullColor, shape_location.belowbar, 0, "ms", MorningStarBullColor)
+plot_shape(EveningStarBear,"EveningStarBear", EveningStarBearArrow, EveningStarSize,EveningStarBearColor, shape_location.abovebar, 0, "es", EveningStarBearColor)
+
+RisingThreeMethodsBull = RisingThreeMethodsVisible and open[4] < close[4] and open < close and close > close[4] and 
+                         abs(close - open) > abs(close[1] - open[1]) and abs(close - open) > abs(close[2] - open[2]) and
+                         abs(close - open) > abs(close[3] - open[3]) and abs(close - open) > abs(close[4] - open[4]) and 
+                         abs(close[4] - open[4]) > abs(close[1] - open[1]) and abs(close[4] - open[4]) > abs(close[2] - open[2]) and
+                         abs(close[4] - open[4]) > abs(close[3] - open[3]) 
+                         
+FallingThreeMethodsBear = FallingThreeMethodsVisible and open[4] > close[4] and open > close and close < close[4] and 
+                         abs(close - open) > abs(close[1] - open[1]) and abs(close - open) > abs(close[2] - open[2]) and
+                         abs(close - open) > abs(close[3] - open[3]) and abs(close - open) > abs(close[4] - open[4]) and 
+                         abs(close[4] - open[4]) > abs(close[1] - open[1]) and abs(close[4] - open[4]) > abs(close[2] - open[2]) and
+                         abs(close[4] - open[4]) > abs(close[3] - open[3]) 
+
+plot_shape(RisingThreeMethodsBull,"RisingThreeMethodsBull", RisingThreeMethodsBullArrow, RisingThreeMethodsSize,RisingThreeMethodsBullColor, shape_location.belowbar, 0, "rt", RisingThreeMethodsBullColor)
+plot_shape(FallingThreeMethodsBear,"FallingThreeMethodsBear", FallingThreeMethodsBearArrow, FallingThreeMethodsSize,FallingThreeMethodsBearColor, shape_location.abovebar, 0, "ft", FallingThreeMethodsBearColor)
+
+RisingWindowBull = RisingWindowVisible and open[1] < close[1] and open < close and low > high[1] + 0.3*(abs(open[1]-close[1]))
+FallingWindowBear = FallingWindowVisible and open[1] > close[1] and open > close and high < low[1] - 0.3*(abs(open[1]-close[1]))
+plot_shape(RisingWindowBull,"RisingWindowBull", RisingWindowBullArrow, RisingWindowSize,RisingWindowBullColor, shape_location.belowbar, 0, "rw", RisingWindowBullColor)
+plot_shape(FallingWindowBear,"FallingWindowBear", FallingWindowBearArrow, FallingWindowSize,FallingWindowBearColor, shape_location.abovebar, 0, "fw", FallingWindowBearColor)
+
+GravestoneDojiBull = GravestoneDojiVisible and open == close and min(open,close)-low < 0.3 * (high - max(open,close)) and 
+                    iff(open[1] == close[1], open[2] > close[2], open[1] > close[1])  
+GravestoneDojiBear = GravestoneDojiVisible and open == close and min(open,close)-low < 0.3 * (high - max(open,close)) and 
+                    iff(open[1] == close[1], open[2] < close[2], open[1] < close[1])   
+plot_shape(GravestoneDojiBull,"GravestoneDojiBull", GravestoneDojiBullArrow, GravestoneDojiSize,GravestoneDojiBullColor, shape_location.belowbar, 0, "gd", GravestoneDojiBullColor)
+plot_shape(GravestoneDojiBear,"GravestoneDojiBear", GravestoneDojiBearArrow, GravestoneDojiSize,GravestoneDojiBearColor, shape_location.abovebar, 0, "gd", GravestoneDojiBearColor)
+
+HammerBull = HammerVisible and open < close and high-max(open,close) < 0.3 * (min(open,close)-low) and    
+             min(open,close)-low > 3 * (abs(open-close)) and iff(open[1] == close[1], open[2] < close[2], open[1] < close[1])
+HammerBear = HammerVisible and open < close and high-max(open,close) < 0.3 * (min(open,close)-low) and    
+             min(open,close)-low > 3 * (abs(open-close)) and iff(open[1] == close[1], open[2] > close[2], open[1] > close[1])
+plot_shape(HammerBull,"HammerBull", HammerBullArrow, HammerSize,HammerBullColor, shape_location.belowbar, 0, "hm", HammerBullColor)
+plot_shape(HammerBear,"HammerBear", HammerBearArrow, HammerSize,HammerBearColor, shape_location.abovebar, 0, "hm", HammerBearColor)
+
+HangingManBull = HangingManVisible and open > close and high-max(open,close) < 0.3 * (min(open,close)-low) and    
+                 min(open,close)-low > 3 * (abs(open-close)) and iff(open[1] == close[1], open[2] > close[2], open[1] > close[1])
+HangingManBear = HangingManVisible and open > close and high-max(open,close) < 0.3 * (min(open,close)-low) and    
+                 min(open,close)-low > 3 * (abs(open-close)) and iff(open[1] == close[1], open[2] < close[2], open[1] < close[1])
+plot_shape(HangingManBull,"HangingManBull", HangingManBullArrow, HangingManSize,HangingManBullColor, shape_location.belowbar, 0, "hg", HangingManBullColor)
+plot_shape(HangingManBear,"HangingManBear", HangingManBearArrow, HangingManSize,HangingManBearColor, shape_location.abovebar, 0, "hg", HangingManBearColor)
+
+HaramiCrossBull = HaramiCrossVisible and open[1] > close[1] and open == close and close > close[1] and close < open[1] and high-low < high[1]-low[1]
+HaramiCrossBear = HaramiCrossVisible and open[1] < close[1] and open == close and close < close[1] and close > open[1] and high-low < high[1]-low[1]
+plot_shape(HaramiCrossBull,"HaramiCrossBull", HaramiCrossBullArrow, HaramiCrossSize,HaramiCrossBullColor, shape_location.belowbar, 0, "hc", HaramiCrossBullColor)
+plot_shape(HaramiCrossBear,"HaramiCrossBear", HaramiCrossBearArrow, HaramiCrossSize,HaramiCrossBearColor, shape_location.abovebar, 0, "hc", HaramiCrossBearColor)
+
+HaramiBull = HaramiVisible and open[1] > close[1] and abs(open-close) <= 0.3 * (abs(open[1]-close[1])) and close > close[1] and close < open[1] and high-low < high[1]-low[1]
+HaramiBear = HaramiVisible and open[1] < close[1] and abs(open-close) <= 0.3 * (abs(open[1]-close[1])) and close < close[1] and close > open[1] and high-low < high[1]-low[1]
+plot_shape(HaramiBull,"HaramiBull", HaramiBullArrow, HaramiSize,HaramiBullColor, shape_location.belowbar, 0, "hr", HaramiBullColor)
+plot_shape(HaramiBear,"HaramiBear", HaramiBearArrow, HaramiSize,HaramiBearColor, shape_location.abovebar, 0, "hr", HaramiBearColor)
+
+InvertedHammerBull = InvertedHammerVisible and open < close and min(open,close)-low < 0.3 * (high-max(open,close)) and    
+                     high-max(open,close) > 3 * (abs(open-close)) and iff(open[1] == close[1], open[2] > close[2], open[1] > close[1]) and
+                     abs(open[1]-close[1]) > 0.5 * (high[1]-low[1])
+InvertedHammerBear = InvertedHammerVisible and open < close and min(open,close)-low < 0.3 * (high-max(open,close)) and    
+                     high-max(open,close) > 3 * (abs(open-close)) and iff(open[1] == close[1], open[2] < close[2], open[1] < close[1]) and
+                     abs(open[1]-close[1]) > 0.5 * (high[1]-low[1])
+plot_shape(InvertedHammerBull,"InvertedHammerBull", InvertedHammerBullArrow, InvertedHammerSize,InvertedHammerBullColor, shape_location.belowbar, 0, "ih", InvertedHammerBullColor)
+plot_shape(InvertedHammerBear,"InvertedHammerBear", InvertedHammerBearArrow, InvertedHammerSize,InvertedHammerBearColor, shape_location.abovebar, 0, "ih", InvertedHammerBearColor)
+
+KickingBull = KickingVisible and open[1] > close[1] and open < close and open > open[1] + 0.5 * (abs(open[1]-close[1])) and abs(open-close) >= 0.7 * (high-low) 
+KickingBear = KickingVisible and open[1] < close[1] and open > close and open < open[1] - 0.5 * (abs(open[1]-close[1])) and abs(open-close) >= 0.7 * (high-low)
+plot_shape(KickingBull,"KickingBull", KickingBullArrow, KickingSize,KickingBullColor, shape_location.belowbar, 0, "kk", KickingBullColor)
+plot_shape(KickingBear,"KickingBear", KickingBearArrow, KickingSize,KickingBearColor, shape_location.abovebar, 0, "kk", KickingBearColor)
+
+LongLowerShadowBull = LongLowerShadowVisible and open < close and high-max(open,close) < 0.3 * (min(open,close)-low) and   
+                      min(open,close)-low > 5 * (abs(open-close)) 
+LongLowerShadowBear = LongLowerShadowVisible and open > close and high-max(open,close) < 0.3 * (min(open,close)-low) and 
+                      min(open,close)-low > 5 * (abs(open-close)) 
+plot_shape(LongLowerShadowBull,"LongLowerShadowBull", LongLowerShadowBullArrow, LongLowerShadowSize,LongLowerShadowBullColor, shape_location.belowbar, 0, "ll", LongLowerShadowBullColor)
+plot_shape(LongLowerShadowBear,"LongLowerShadowBear", LongLowerShadowBearArrow, LongLowerShadowSize,LongLowerShadowBearColor, shape_location.abovebar, 0, "ll", LongLowerShadowBearColor)
+
+LongUpperShadowBull = LongUpperShadowVisible and open < close and min(open,close)-low < 0.3 * (high-max(open,close)) and   
+                      high-max(open,close) > 5 * (abs(open-close)) 
+LongUpperShadowBear = LongUpperShadowVisible and open > close and min(open,close)-low < 0.3 * (high-max(open,close)) and   
+                      high-max(open,close) > 5 * (abs(open-close))
+plot_shape(LongUpperShadowBull,"LongUpperShadowBull", LongUpperShadowBullArrow, LongUpperShadowSize,LongUpperShadowBullColor, shape_location.belowbar, 0, "lu", LongUpperShadowBullColor)
+plot_shape(LongUpperShadowBear,"LongUpperShadowBear", LongUpperShadowBearArrow, LongUpperShadowSize,LongUpperShadowBearColor, shape_location.abovebar, 0, "lu", LongUpperShadowBearColor)
+
+MarubozuBull = MarubozuVisible and abs(open-close) >= 0.9 * (high-low) and open < close
+MarubozuBear = MarubozuVisible and abs(open-close) >= 0.9 * (high-low) and open > close
+plot_shape(MarubozuBull,"MarubozuBull", MarubozuBullArrow, MarubozuSize,MarubozuBullColor, shape_location.belowbar, 0, "mr", MarubozuBullColor)
+plot_shape(MarubozuBear,"MarubozuBear", MarubozuBearArrow, MarubozuSize,MarubozuBearColor, shape_location.abovebar, 0, "mr", MarubozuBearColor)
+
+OnNeckBull = OnNeckVisible and open[1] < close[1] and open > close and close[1] == close and abs(open[1]-close[1]) >= 0.5 * (high[1]-low[1]) and abs(open-close) >= 0.5 * (high-low)
+OnNeckBear = OnNeckVisible and open[1] > close[1] and open < close and close[1] == close and abs(open[1]-close[1]) >= 0.5 * (high[1]-low[1]) and abs(open-close) >= 0.5 * (high-low)
+plot_shape(OnNeckBull,"OnNeckBull", OnNeckBullArrow, OnNeckSize,OnNeckBullColor, shape_location.belowbar, 0, "on", OnNeckBullColor)
+plot_shape(OnNeckBear,"OnNeckBear", OnNeckBearArrow, OnNeckSize,OnNeckBearColor, shape_location.abovebar, 0, "on", OnNeckBearColor)
+
+ShootingStarBull = ShootingStarVisible and open > close and min(open,close)-low < 0.3 * (high-max(open,close)) and    
+                     high-max(open,close) > 3 * (abs(open-close)) and iff(open[1] == close[1], open[2] > close[2], open[1] > close[1]) and
+                     abs(open[1]-close[1]) > 0.5 * (high[1]-low[1])
+ShootingStarBear = ShootingStarVisible and open > close and min(open,close)-low < 0.3 * (high-max(open,close)) and    
+                     high-max(open,close) > 3 * (abs(open-close)) and iff(open[1] == close[1], open[2] < close[2], open[1] < close[1]) and
+                     abs(open[1]-close[1]) > 0.5 * (high[1]-low[1])
+plot_shape(ShootingStarBull,"ShootingStarBull", ShootingStarBullArrow, ShootingStarSize,ShootingStarBullColor, shape_location.belowbar, 0, "ss", ShootingStarBullColor)
+plot_shape(ShootingStarBear,"ShootingStarBear", ShootingStarBearArrow, ShootingStarSize,ShootingStarBearColor, shape_location.abovebar, 0, "ss", ShootingStarBearColor)
+
+SpinningTopBull = SpinningTopVisible and abs(open-close) < (2/3)*(high-low) and 
+                  high-max(open,close) > 3 * (abs(open-close)) and min(open,close)-low > 3 * (abs(open-close)) and 
+                  open[1] > close[1] and open < close
+SpinningTopBear = SpinningTopVisible and abs(open-close) < (2/3)*(high-low) and 
+                  high-max(open,close) > 3 * (abs(open-close)) and min(open,close)-low > 3 * (abs(open-close)) and 
+                  open[1] > close[1] and open > close
+plot_shape(SpinningTopBull,"SpinningTopBull", SpinningTopBullArrow, SpinningTopSize,SpinningTopBullColor, shape_location.belowbar, 0, "spt", SpinningTopBullColor)
+plot_shape(SpinningTopBear,"SpinningTopBear", SpinningTopBearArrow, SpinningTopSize,SpinningTopBearColor, shape_location.abovebar, 0, "spt", SpinningTopBearColor)
+
+
+ThreeWhiteSoldiersBull = ThreeWhiteSoldiersVisible and open[2] < close[2] and open[1] < close[1] and open < close and       
+                         close[2] >= open[1] and close[1] >= open and close >= close[1] and close >= close[2]
+ThreeBlackCrowsBear = ThreeBlackCrowsVisible and open[2] > close[2] and open[1] > close[1] and open > close and 
+                         close[2] <= open[1] and close[1] <= open and close <= close[1] and close <= close[2]
+plot_shape(ThreeWhiteSoldiersBull,"ThreeWhiteSoldiersBull", ThreeWhiteSoldiersBullArrow, ThreeWhiteSoldiersSize,ThreeWhiteSoldiersBullColor, shape_location.belowbar, 0, "3g", ThreeWhiteSoldiersBullColor)
+plot_shape(ThreeBlackCrowsBear,"ThreeBlackCrowsBear", ThreeBlackCrowsBearArrow, ThreeBlackCrowsSize,ThreeBlackCrowsBearColor, shape_location.abovebar, 0, "3r", ThreeBlackCrowsBearColor)
+
+TriStarBull = TriStarVisible and open[2] == close[2] and open[1] == close[1] and open == close and open[3] > close[3] 
+TriStarBear = TriStarVisible and open[2] == close[2] and open[1] == close[1] and open == close and open[3] < close[3] 
+plot_shape(TriStarBull,"TriStarBull", TriStarBullArrow, TriStarSize,TriStarBullColor, shape_location.belowbar, 0, "ts", TriStarBullColor)
+plot_shape(TriStarBear,"TriStarBear", TriStarBearArrow, TriStarSize,TriStarBearColor, shape_location.abovebar, 0, "ts", TriStarBearColor)
+
+TweezerBottomBull = TweezerBottomVisible and open[1] > close[1] and abs(open[1]-close[1]) >= 0.62 * (high[1]-low[1]) and low[1] == low and close >= low[1]
+TweezerBottomBear = TweezerBottomVisible and open[1] < close[1] and abs(open[1]-close[1]) >= 0.62 * (high[1]-low[1]) and low[1] == low and close >= low[1] and open > close
+plot_shape(TweezerBottomBull,"TweezerBottomBull", TweezerBottomBullArrow, TweezerBottomSize,TweezerBottomBullColor, shape_location.belowbar, 0, "tb", TweezerBottomBullColor)
+plot_shape(TweezerBottomBear,"TweezerBottomBear", TweezerBottomBearArrow, TweezerBottomSize,TweezerBottomBearColor, shape_location.abovebar, 0, "tb", TweezerBottomBearColor)
+
+TweezerTopBull = TweezerTopVisible and open[1] > close[1] and abs(open[1]-close[1]) >= 0.62 * (high[1]-low[1]) and high[1] == high and close <= high[1]
+TweezerTopBear = TweezerTopVisible and open[1] < close[1] and abs(open[1]-close[1]) >= 0.62 * (high[1]-low[1]) and high[1] == high and close <= high[1]
+plot_shape(TweezerTopBull,"TweezerTopBull", TweezerTopBullArrow, TweezerTopSize,TweezerTopBullColor, shape_location.belowbar, 0, "tt", TweezerTopBullColor)
+plot_shape(TweezerTopBear,"TweezerTopBear", TweezerTopBearArrow, TweezerTopSize,TweezerTopBearColor, shape_location.abovebar, 0, "tt", TweezerTopBearColor)

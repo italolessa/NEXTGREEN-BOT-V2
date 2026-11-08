@@ -1,0 +1,179 @@
+instrument {
+    name = "TCS PRO 5 Confirmacoes",
+    short_name = "TCS_PRO",
+    icon = "indicators:ADX",
+    overlay = true
+}
+
+-- ============================================================
+-- PARAMETROS DE ENTRADA
+-- ============================================================
+MaValue       = input(5,  "Fonte de Preco",   input.string_selection, inputs.titles)
+ema9_period   = input(9,  "EMA Rapida (9)",   input.integer, 1, 1000, 1)
+ema21_period  = input(21, "EMA Media (21)",   input.integer, 1, 1000, 1)
+ema50_period  = input(50, "EMA Lenta (50)",   input.integer, 1, 1000, 1)
+rsi_period    = input(14, "Periodo RSI",      input.integer, 1, 100,  1)
+Signal_period = input(5,  "Signal period",    input.integer, 1, 1000, 1)
+
+-- ============================================================
+-- CORES
+-- ============================================================
+input_group {
+    "Sinal CALL",
+    colorBuy   = input { default = "green",  type = input.color },
+    visibleBuy = input { default = true,     type = input.plot_visibility }
+}
+
+input_group {
+    "Sinal PUT",
+    colorSell   = input { default = "red",   type = input.color },
+    visibleSell = input { default = true,    type = input.plot_visibility }
+}
+
+input_group {
+    "Pre-Alerta Amarelo",
+    colorAlert   = input { default = "yellow", type = input.color },
+    visibleAlert = input { default = true,     type = input.plot_visibility }
+}
+
+input_group {
+    "Medias Moveis - Cores",
+    cor_ema9  = input { default = "blue",   type = input.color },
+    cor_ema21 = input { default = "orange", type = input.color },
+    cor_ema50 = input { default = "purple", type = input.color }
+}
+
+-- ============================================================
+-- FONTE DE PRECO
+-- ============================================================
+local src = inputs[MaValue]
+
+-- ============================================================
+-- MEDIAS MOVEIS
+-- ============================================================
+ema9  = ema(src, ema9_period)
+ema21 = ema(src, ema21_period)
+ema50 = ema(src, ema50_period)
+
+plot(ema9,  "EMA 9",  cor_ema9,  1)
+plot(ema21, "EMA 21", cor_ema21, 1)
+plot(ema50, "EMA 50", cor_ema50, 2)
+
+-- ============================================================
+-- BUFFER (cruzamento sinal - igual BULLEX REI)
+-- ============================================================
+smaFast = sma(src, ema9_period)
+smaSlow = sma(src, ema50_period)
+buffer1 = smaFast - smaSlow
+buffer2 = wma(buffer1, Signal_period)
+
+-- cruzamento do buffer (gatilho principal)
+cruz_buy  = buffer1 > buffer2 and buffer1[1] < buffer2[1]
+cruz_sell = buffer1 < buffer2 and buffer1[1] > buffer2[1]
+
+-- ============================================================
+-- FILTRO 1: ALINHAMENTO DAS 3 EMAs
+-- ============================================================
+emas_alta  = ema9 > ema21 and ema21 > ema50
+emas_baixa = ema9 < ema21 and ema21 < ema50
+
+-- ============================================================
+-- FILTRO 2: RSI (nao entra em exaustao)
+-- ============================================================
+rsi_val  = rsi(src, rsi_period)
+rsi_buy  = rsi_val < 70
+rsi_sell = rsi_val > 30
+
+-- ============================================================
+-- FILTRO 3: PRESSAO DE VELA
+-- ============================================================
+pressao_up   = close > (high + low) / 2
+pressao_down = close < (high + low) / 2
+
+-- ============================================================
+-- FILTRO 4: INCLINACAO DAS MEDIAS
+-- ============================================================
+inclinacao_buy  = ema9 > ema9[1] and ema21 > ema21[1]
+inclinacao_sell = ema9 < ema9[1] and ema21 < ema21[1]
+
+-- ============================================================
+-- FILTRO 5: PRECO ACIMA/ABAIXO DA EMA 50
+-- ============================================================
+tendencia_alta  = close > ema50
+tendencia_baixa = close < ema50
+
+-- ============================================================
+-- PRE-ALERTA: alinhamento das medias + RSI ok + inclinacao
+-- ============================================================
+preAlert_buy  = emas_alta  and rsi_buy  and inclinacao_buy  and tendencia_alta
+preAlert_sell = emas_baixa and rsi_sell and inclinacao_sell and tendencia_baixa
+
+-- ============================================================
+-- SINAL DEFINITIVO: pre-alerta + cruzamento do buffer
+-- ============================================================
+buyCondition  = preAlert_buy  and cruz_buy
+sellCondition = preAlert_sell and cruz_sell
+
+-- ============================================================
+-- VERSÃO CORRIGIDA: Mostra a bolinha amarela no MESMO candle do sinal
+-- A bolinha aparece como um alerta visual adicional
+-- ============================================================
+showPreAlert_buy  = visibleAlert and preAlert_buy and cruz_buy
+showPreAlert_sell = visibleAlert and preAlert_sell and cruz_sell
+
+-- ============================================================
+-- PLOT PRE-ALERTA (bolinha amarela) - aparece junto com o sinal
+-- ============================================================
+plot_shape(
+    showPreAlert_buy,
+    "PRE_CALL",
+    shape_style.circle,
+    shape_size.small,
+    colorAlert,
+    shape_location.belowbar,
+    -3,
+    "PRE-ALERTA CALL",
+    "black"
+)
+
+plot_shape(
+    showPreAlert_sell,
+    "PRE_PUT",
+    shape_style.circle,
+    shape_size.small,
+    colorAlert,
+    shape_location.abovebar,
+    -3,
+    "PRE-ALERTA PUT",
+    "black"
+)
+
+-- ============================================================
+-- PLOT SINAL CALL (triângulo)
+-- ============================================================
+plot_shape(
+    visibleBuy and buyCondition,
+    "CALL",
+    shape_style.triangleup,
+    shape_size.huge,
+    colorBuy,
+    shape_location.belowbar,
+    -1,
+    "CALL",
+    "white"
+)
+
+-- ============================================================
+-- PLOT SINAL PUT (triângulo)
+-- ============================================================
+plot_shape(
+    visibleSell and sellCondition,
+    "PUT",
+    shape_style.triangledown,
+    shape_size.huge,
+    colorSell,
+    shape_location.abovebar,
+    -1,
+    "PUT",
+    "white"
+)

@@ -1,0 +1,35 @@
+instrument {overlay = true,
+           name = 'Volume Ativo',
+            short_name = 'VA',
+            icon="indicators:ADX"}
+
+
+input_group { "CALL - UP COLOR", call_color = input { default="#00FF00", type = input.color } }
+input_group { "PUT - DOWN COLOR", put_color = input { default="#FF0000", type = input.color } }
+
+ 
+if ((close[1] < open[1]) and (close > open) and (close > high[1]) and close[1] >= open) then
+
+    plot_shape(1,
+            'Bull_Engulfing',
+            shape_style.arrowup,
+            shape_size.huge,
+            call_color,
+            shape_location.belowbar,
+            0,
+            "CALL",
+            call_color )
+else
+    if ((close[1] > open[1]) and (close < open) and (close < low[1]) and close[1] <= open) then
+
+    plot_shape(1,
+            'Bear_Engulfing',
+            shape_style.arrowdown,
+            shape_size.huge,
+            put_color,
+            shape_location.abovebar,
+            0,
+            "PUT",
+            put_color)
+    end
+end

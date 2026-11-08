@@ -1,0 +1,41 @@
+instrument {
+    name = 'ENGOLE + WYCKOFF',
+    short_name = 'ENG+WYCK',
+    icon = 'indicators:BB',
+    overlay = true
+}
+
+input_group {
+    "Sinais de CONFLUNCIA",
+    colorBuy = input { default = "#00FF00", type = input.color },
+    colorSell = input { default = "#FF0000", type = input.color },
+    visibleBuy = input { default = true, type = input.plot_visibility },
+    visibleSell = input { default = true, type = input.plot_visibility }
+}
+
+-- ENGOLE (funcionando)
+engolfo_alta = (close > open and close[1] < open[1] and close > high[1])
+engolfo_baixa = (close < open and close[1] > open[1] and close < low[1])
+
+-- WYCKOFF extremamente simples (apenas mdias)
+ma9 = sma(close, 9)
+ma21 = sma(close, 21)
+
+wyckoff_compra = ma9 > ma21
+wyckoff_venda = ma9 < ma21
+
+-- CONFLUNCIA
+confluencia_compra = engolfo_alta and wyckoff_compra
+confluencia_venda = engolfo_baixa and wyckoff_venda
+
+-- PLOTAGEM
+if visibleBuy and confluencia_compra then
+    plot_shape(true, "COMPRA", shape_style.triangleup, shape_size.huge, colorBuy, shape_location.belowbar, 0, " CONF ", colorBuy)
+end
+
+if visibleSell and confluencia_venda then
+    plot_shape(true, "VENDA", shape_style.triangledown, shape_size.huge, colorSell, shape_location.abovebar, 0, " CONF ", colorSell)
+end
+
+plot(ma9, "MA9", "#0080FF", 1)
+plot(ma21, "MA21", "#FFA500", 1)

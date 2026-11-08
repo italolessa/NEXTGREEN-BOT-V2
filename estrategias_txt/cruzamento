@@ -1,0 +1,128 @@
+instrument {
+    name = "Cruzamento2  Aprimorado",
+    short_name = "CMC+ENG+",
+    overlay = true
+}
+
+-- CONFIGURAES AVANADAS (CORRIGIDO)
+input_group("Configuraes de Perodos", {
+    periodo_curto = input(3, "Perodo para Mnimos/Mximos Curtos", input.integer, 1, 20),
+    periodo_longo = input(20, "Perodo para Mnimos/Mximos Longos", input.integer, 10, 100),
+    periodo_tendencia = input(50, "Perodo para Filtro de Tendncia", input.integer, 20, 200)
+})
+
+-- FILTRO DE TENDNCIA (MANTIDO)
+tendencia_alta = ema(close, periodo_tendencia) > ema(close, periodo_tendencia)[1]
+tendencia_baixa = ema(close, periodo_tendencia) < ema(close, periodo_tendencia)[1]
+-- PRIMEIRA ESTRATGIA (REVISADA)
+c1 = close[1] < open[1] and close > open
+c2 = close > open[1]
+c3 = lowest(low, periodo_curto) < lowest(low, periodo_longo)[1] or 
+     lowest(low, periodo_curto) < lowest(low, periodo_longo)[2] or 
+     lowest(low, periodo_curto) < lowest(low, periodo_longo)[3]
+buy = c1 and c2 and c3 and tendencia_alta  -- S compra em tendncia de alta
+
+c4 = close[1] > open[1] and close < open
+c5 = close < open[1]
+c6 = highest(high, periodo_curto) > highest(high, periodo_longo)[1] or 
+     highest(high, periodo_curto) > highest(high, periodo_longo)[2] or 
+     highest(high, periodo_curto) > highest(high, periodo_longo)[3]
+sell = c4 and c5 and c6 and tendencia_baixa  -- S vende em tendncia de baixa
+
+plot_shape(buy, "long", shape_style.triangleup, shape_size.large, 'white', shape_location.belowbar, -1, 'compra', 'green')
+plot_shape(sell, "short", shape_style.triangledown, shape_size.large, 'yellow', shape_location.abovebar, -1, 'vende', 'red')
+
+-- CONFIGURAES PARA CRUZAMENTO DE MDIAS (MANTIDO)
+input_group {
+    "SMAA", 
+    smaa_color = input{ default = "yellow", type = input.color }
+}
+
+input_group {
+    "SMAB", 
+    smab_color = input{ default = "blue", type = input.color }
+}
+
+input_group {
+    "Compra Confirmada", 
+    up_color = input{ default = "green", type = input.color }
+}
+
+input_group {
+    "Venda Confirmada", 
+    down_color = input{ default = "red", type = input.color }
+}
+
+-- CLCULOS PARA CRUZAMENTO DE MDIAS (MANTIDO)
+smaa = ema(close, 5)  -- Mdia rpida (5 perodos)
+smab = ema(close, 10) -- Mdia lenta (10 perodos)
+
+-- SINAIS DE COMPRA/VENDA PARA CRUZAMENTO DE MDIAS (COM FILTRO DE TENDNCIA)
+cruzamento_compra = (smaa > smab) and (smaa[1] < smab[1]) and tendencia_alta
+cruzamento_venda = (smaa < smab) and (smaa[1] > smab[1]) and tendencia_baixa
+
+-- SINAIS PARA PADRO ENGOLFO (COM FILTRO DE TENDNCIA)
+engolfo_compra = (close[1] < open[1]) and (close > open) and (close > high[1]) and close[2] >= open and tendencia_alta
+engolfo_venda = (close[1] > open[1]) and (close < open) and (close < low[1]) and close[2] <= open and tendencia_baixa
+
+-- SINAIS COMBINADOS (REVISADOS)
+compra_confirmada = cruzamento_compra and engolfo_compra
+venda_confirmada = cruzamento_venda and engolfo_venda
+
+-- PLOTAGEM DAS MDIAS (MANTIDO)
+plot(smaa, "Mdia Rpida", smaa_color)
+plot(smab, "Mdia Lenta", smab_color)
+
+-- PLOTAGEM DOS SINAIS COMBINADOS (MANTIDO)
+plot_shape(
+    compra_confirmada,
+    "COMPRA CONFIRMADA",
+    shape_style.arrowup,
+    shape_size.huge,
+    up_color,
+    shape_location.belowbar, 
+    -1,
+    "COMPRA CONFIRMADA",
+    up_color
+)
+
+plot_shape(
+    venda_confirmada,
+    "VENDA CONFIRMADA",
+    shape_style.arrowdown,
+    shape_size.huge,
+    down_color,
+    shape_location.abovebar, 
+    -1,
+    "VENDA CONFIRMADA",
+    down_color
+)
+
+-- DESTAQUE PARA SINAIS COMBINADOS (MANTIDO)
+plot_shape(
+    compra_confirmada,
+    "DESTAQUE COMPRA",
+    shape_style.circle,
+    shape_size.large,
+    na,
+    shape_location.belowbar, 
+    -1,
+    "",
+    up_color
+)
+
+plot_shape(
+    venda_confirmada,
+    "DESTAQUE VENDA",
+    shape_style.circle,
+    shape_size.large,
+    na,
+    shape_location.abovebar, 
+    -1,
+    "",
+    down_color
+)
+
+-- ALERTAS (MANTIDO)
+alertcondition(buy, "Sinal de Compra Detectado", "Compra!")
+alertcondition(sell, "Sinal de Venda Detectado", "Venda!")
