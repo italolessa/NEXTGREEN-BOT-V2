@@ -4,38 +4,28 @@ let isBuscando = false;
 let ultimoAtivoEnviado = null;
 let tempoUltimoEnvio = 0;
 
-let configSolicitada = { timeframe: 'M1', mercado: 'OTC' };
+let configSolicitada = { timeframe: 'M1', mercado: 'OTC', ignorarAtivo: null };
 
+// O server.js chama essa função para atualizar a config
 global.definirConfiguracao = (config) => {
     configSolicitada = config;
-    ultimoAtivoEnviado = null; 
-    console.log(`🤖 Cérebro atualizado: Foco em ${config.timeframe} | Mercado ${config.mercado}`);
+    // Não limpamos o ultimoAtivoEnviado aqui para manter a trava, 
+    // mas a exclusão do ativo será feita na hora da busca.
+    console.log(`🤖 Cérebro atualizado: Foco em ${config.timeframe} | Mercado ${config.mercado} | Ignorar: ${config.ignorarAtivo || 'Nenhum'}`);
 };
 
 async function iniciarBotServidor(window, tokenSsid) {
     if (!tokenSsid) return console.error("❌ Token não configurado.");
     console.log("⏳ Iniciando SDK no servidor...");
-    
     try {
         const sdkModule = await import('@quadcode-tech/client-sdk-js');
-        const { ClientSdk, SsidAuthMethod, WsConnectionStateEnum, BinaryOptionsDirection } = sdkModule;
-        
+        const { ClientSdk, SsidAuthMethod, BinaryOptionsDirection } = sdkModule;
         sdk = await ClientSdk.create(WS_URL, 82, new SsidAuthMethod(tokenSsid));
         global.BinaryOptionsDirection = BinaryOptionsDirection;
         
-        // --- MONITORAMENTO DE AUTENTICAÇÃO (O "Watchdog" do Token) ---
-        const wsConnectionState = await sdk.wsConnectionState();
-        wsConnectionState.subscribeOnStateChanged((state) => {
-            if (state === WsConnectionStateEnum.Authenticated) {
-                console.log("✅ SDK Autenticado e pronto para operar!");
-            } else if (state === WsConnectionStateEnum.AuthenticationFailed) {
-                console.error("🚨 ALERTA: TOKEN EXPIRADO! O robô na nuvem parou de funcionar.");
-                console.error("👉 SOLUÇÃO: Abra o aplicativo no seu PC e faça o login para enviar um Token novo automaticamente.");
-                global.buscando = false; // Garante que a busca pare
-            }
-        });
-        // -----------------------------------------------------------------
-
+        console.log("✅ SDK inicializado! Aguardando comando de busca do App...");
+        
+        // Fica verificando se o app mandou buscar
         setInterval(async () => {
             if (!isBuscando && global.buscando) {
                 await buscarAnaliseServidor();
@@ -132,6 +122,7 @@ function analisarGraficoComEstrategias(candles) {
     if (rsi < 30 && pavioInferior > corpo * 1.5) return { direcao: "CALL", estrategia: "Reversão (RSI + Pavio)", confianca: 88 };
     if (rsi > 70 && pavioSuperior > corpo * 1.5) return { direcao: "PUT", estrategia: "Reversão (RSI + Pavio)", confianca: 88 };
 
+    // Se nenhuma estratégia for cirúrgica o suficiente, retorna null.
     return null;
 }
 
@@ -146,10 +137,17 @@ async function buscarAnaliseServidor() {
         const actives = binaryOptions.getActives();
         const now = sdk.currentTime();
         
+        // --- A MÁGICA PARA NÃO REPETIR ATIVO ---
+        const ativoIgnorado = configSolicitada.ignorarAtivo;
+
         let ativosFiltrados = actives.filter(a => {
             const mercadoOk = configSolicitada.mercado === 'OTC' ? a.ticker.includes('-OTC') : !a.ticker.includes('-OTC');
             const estaAberto = a.canBeBoughtAt(now);
-            return mercadoOk && estaAberto;
+            
+            // Se o ativo for o mesmo que o app pediu para ignorar, ele é removido da busca
+            const naoEhOIgnorado = ativoIgnorado ? !a.ticker.includes(ativoIgnorado) : true;
+
+            return mercadoOk && estaAberto && naoEhOIgnorado;
         });
         
         let melhoresSinais = [];
@@ -166,8 +164,9 @@ async function buscarAnaliseServidor() {
             const campeao = melhoresSinais[0];
             const agora = Date.now();
             
+            // Trava de segurança para não mandar o mesmo sinal na mesma vela
             if (campeao.ativo === ultimoAtivoEnviado && (agora - tempoUltimoEnvio) < 60000) {
-                // Ignora repetição
+                console.log(`⏳ [IGNORADO] ${campeao.ativo} (Aguardando nova vela)`);
             } else {
                 ultimoAtivoEnviado = campeao.ativo;
                 tempoUltimoEnvio = agora;
@@ -175,7 +174,7 @@ async function buscarAnaliseServidor() {
                 if (global.adicionarSinal) global.adicionarSinal(campeao);
             }
         } else if (global.buscando) {
-            console.log(`⚠️ Nenhum setup perfeito encontrado. Mercado ruidoso. Retentando...`);
+            console.log(`⚠️ Nenhum setup perfeito encontrado nos outros ativos. Retentando...`);
         }
     } catch (error) {
         console.error("❌ Erro na varredura:", error.message);
