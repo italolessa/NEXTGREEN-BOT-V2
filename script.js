@@ -1,8 +1,9 @@
 let configAtual = { timeframe: 'M1', mercado: 'OTC' };
 let sinalAtual = null;
 let historicoLocal = [];
-let ultimoAtivoIgnorado = null;
+let ultimoAtivoEnviado = null; // NOVO: Memória do último ativo recebido
 
+// Função de selecionar as tabelas (M1/M5 e OTC/Aberto)
 function setConfig(key, valor) {
     configAtual[key] = valor;
 
@@ -17,6 +18,7 @@ function setConfig(key, valor) {
     }
 }
 
+// Botão: BUSCAR ATIVO
 function solicitarBusca() {
     document.getElementById('msg-inicial').style.display = 'none';
     document.getElementById('area-sinal').style.display = 'none';
@@ -26,15 +28,15 @@ function solicitarBusca() {
     document.getElementById('btn-buscar').disabled = true;
     document.getElementById('btn-parar').style.display = 'block';
 
-    console.log(`🔍 Buscando ignorando: ${ultimoAtivoIgnorado || 'Nenhum'}`);
-
+    // A MÁGICA: Envia a configuração e o último ativo para ser ignorado
     window.api.configurarBusca({
         timeframe: configAtual.timeframe,
         mercado: configAtual.mercado,
-        ignorarAtivo: ultimoAtivoIgnorado
+        ignorarAtivo: ultimoAtivoEnviado 
     });
 }
 
+// Botão: PARAR
 function pararBusca() {
     document.getElementById('loader').style.display = 'none';
     document.getElementById('msg-inicial').style.display = 'block';
@@ -45,12 +47,13 @@ function pararBusca() {
     document.getElementById('btn-parar').style.display = 'none';
 }
 
+// Botão: RESETAR FILTROS
 function resetarFiltros() {
     if(confirm("Deseja resetar os filtros e limpar o histórico da tela?")) {
         configAtual = { timeframe: 'M1', mercado: 'OTC' };
         setConfig('timeframe', 'M1');
         setConfig('mercado', 'OTC');
-        ultimoAtivoIgnorado = null;
+        ultimoAtivoEnviado = null; // Limpa a memória do ativo
 
         historicoLocal = [];
         atualizarHistorico();
@@ -60,10 +63,10 @@ function resetarFiltros() {
     }
 }
 
+// Recebe o sinal da nuvem e atualiza a tela
 window.api.onNovoSinal((dados) => {
     sinalAtual = dados;
-    ultimoAtivoIgnorado = dados.ativo;
-    console.log(`📌 Próxima busca vai ignorar: ${ultimoAtivoIgnorado}`);
+    ultimoAtivoEnviado = dados.ativo; // Salva o ativo atual para a próxima busca
 
     document.getElementById('loader').style.display = 'none';
     document.getElementById('area-sinal').style.display = 'block';
@@ -71,7 +74,6 @@ window.api.onNovoSinal((dados) => {
     document.getElementById('btn-buscar').innerText = "🔍 Buscar Ativo";
     document.getElementById('btn-buscar').disabled = false;
     document.getElementById('btn-parar').style.display = 'none';
-
     document.getElementById('res-ativo').innerText = dados.ativo;
     document.getElementById('res-tf').innerText = dados.timeframe;
     document.getElementById('res-conf').innerText = `${dados.score}%`;
@@ -93,6 +95,7 @@ window.api.onNovoSinal((dados) => {
     }
 });
 
+// Atualiza a tabela visual do histórico
 function atualizarHistorico() {
     const container = document.getElementById('lista-historico');
 
@@ -100,7 +103,6 @@ function atualizarHistorico() {
         container.innerHTML = '<div style="color: #666; text-align: center; padding: 10px;">Nenhum sinal recebido ainda...</div>';
         return;
     }
-
     container.innerHTML = historicoLocal.map(item => `
         <div class="historico-item">
             <span class="historico-ativo">${item.ativo}</span>
@@ -111,12 +113,13 @@ function atualizarHistorico() {
     `).join('');
 }
 
+// Botão Enviar para Corretora
 function enviarParaCorretora() {
     if (sinalAtual) {
         alert(`✅ Ordem enviada!\nAtivo: ${sinalAtual.ativo}\nDireção: ${sinalAtual.direcao}`);
         document.getElementById('area-sinal').style.display = 'none';
         document.getElementById('msg-inicial').style.display = 'block';
-        document.getElementById('msg-inicial').innerText = "Sinal enviado! Clique em 'Buscar Ativo'.";
+        document.getElementById('msg-inicial').innerText = "Sinal enviado! Clique em 'Buscar Ativo' para uma nova análise.";
     }
 }
 
