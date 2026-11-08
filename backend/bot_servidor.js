@@ -27,7 +27,7 @@ async function iniciarBotServidor(window, tokenSsid) {
             if (!isBuscando && global.buscando) {
                 await buscarAnaliseServidor();
             }
-        }, 15000); // Roda a cada 15s para pegar os cruzamentos a tempo
+        }, 15000); 
     } catch (error) {
         console.error("❌ Erro ao conectar no servidor:", error.message);
     }
@@ -52,10 +52,16 @@ async function buscarAnaliseServidor() {
     try {
         const binaryOptions = await sdk.binaryOptions();
         const actives = binaryOptions.getActives();
+        const now = sdk.currentTime();
         
         let ativosFiltrados = actives.filter(a => {
-            if (configSolicitada.mercado === 'OTC') return a.ticker.includes('-OTC');
-            else return !a.ticker.includes('-OTC');
+            // Filtra por OTC ou Aberto
+            const mercadoOk = configSolicitada.mercado === 'OTC' ? a.ticker.includes('-OTC') : !a.ticker.includes('-OTC');
+            
+            // --- A MÁGICA AQUI: Verifica se o ativo está aberto e disponível para compra AGORA ---
+            const estaAberto = a.canBeBoughtAt(now);
+
+            return mercadoOk && estaAberto;
         });
         
         let melhoresSinais = [];
@@ -83,7 +89,7 @@ async function buscarAnaliseServidor() {
                 }
             }
         } else if (global.buscando) {
-            console.log(`⚠️ Nenhum cruzamento de EMA válido. Retentando...`);
+            console.log(`⚠️ Nenhum cruzamento de EMA válido ou ativos fechados. Retentando...`);
         }
     } catch (error) {
         console.error("❌ Erro na varredura:", error.message);
