@@ -21,8 +21,8 @@ function carregarEstrategiasQCS() {
     for (const arquivo of arquivos) {
         if (arquivo.endsWith('.txt')) {
             const conteudo = fs.readFileSync(path.join(pasta, arquivo), 'utf-8');
-            // Verifica se parece um script (ignora arquivos vazios)
-            if (conteudo.trim().length > 10) {
+            // Filtra apenas arquivos que parecem ser scripts QCS válidos
+            if (conteudo.includes('instrument') || conteudo.includes('plot')) {
                 estrategias.push({ nome: arquivo.replace('.txt', ''), codigo: conteudo });
             }
         }
@@ -62,56 +62,48 @@ async function iniciarBotServidor(window, tokenSsid) {
     }
 }
 
-// --- EXECUTOR DO SCRIPT QCS (LUA) ---
+// --- EXECUTOR DO SCRIPT QCS (LUA) COM TIMEOUT ---
 async function executarScriptQCS(codigoLua, candles) {
     const factory = new LuaFactory();
     const lua = await factory.createEngine();
 
     try {
-        // Prepara os dados das velas para o script Lua
         const closes = candles.map(c => c.close);
+        const opens = candles.map(c => c.open);
         const highs = candles.map(c => c.max);
         const lows = candles.map(c => c.min);
-        const opens = candles.map(c => c.open);
 
-        // Define as variáveis globais que o script QCS espera ler
         lua.global.set('close', closes);
+        lua.global.set('open', opens);
         lua.global.set('high', highs);
         lua.global.set('low', lows);
-        lua.global.set('open', opens);
 
-        // Cria uma função para o script chamar quando quiser dar o sinal
         let sinalGerado = null;
         lua.global.set('plot_signal', (direcao) => {
             sinalGerado = direcao; 
         });
-        
-        // Cria uma variável global para o script escrever o resultado (caso ele use print)
-        lua.global.set('print', (msg) => {
-            if (msg === 'CALL' || msg === 'PUT') sinalGerado = msg;
-        });
 
-        // Executa o código real do arquivo .txt no motor Lua
-        await lua.doString(codigoLua);
+        // TRAVA DE SEGURANÇA: Tempo limite de 2 segundos por script
+        const timeoutPromise = new Promise((_, reject) => 
+            setTimeout(() => reject(new Error("Timeout no script QCS")), 2000)
+        );
 
-        // Se o script gerou um sinal, retorna
-        if (sinalGerado === 'CALL' || sinalGerado === 'PUT') {
-            return { direcao: sinalGerado };
+        // Executa o código do arquivo .txt no motor Lua
+        const scriptPromise = lua.doString(codigoLua);
+
+        // Corre a execução contra o tempo limite
+        await Promise.race([scriptPromise, timeoutPromise]);
+
+        if (sinalGerado) {
+            return { direcao: sinalGerado, estrategia: "QCS Executado" };
         }
-        
-        // Se o script não chamar as funções, tentamos ler uma variável global "signal"
-        const sinalFinal = lua.global.get('signal');
-        if (sinalFinal === 'CALL' || sinalFinal === 'PUT' || sinalFinal === 1 || sinalFinal === -1) {
-            return { direcao: sinalFinal === 1 ? 'CALL' : 'PUT' };
-        }
-
         return null;
 
     } catch (err) {
-        // Se o script tiver erro de sintaxe (ex: função nativa não existe), ignora
+        // Se o script tiver erro de sintaxe ou estourar o tempo, ignora silenciosamente
         return null;
     } finally {
-        lua.global.close();
+        lua.global.close(); // Fecha o motor Lua para liberar memória
     }
 }
 
@@ -122,12 +114,12 @@ async function buscarAnaliseServidor() {
     const arquivosQCS = carregarEstrategiasQCS();
 
     if (arquivosQCS.length === 0) {
-        console.log("⚠️ Nenhum arquivo .txt encontrado na pasta!");
+        console.log("⚠️ Nenhum arquivo QCS válido encontrado na pasta!");
         isBuscando = false;
         return;
     }
 
-    console.log(`🔎 [ROBÔ] Executando ${arquivosQCS.length} scripts QCS/Lua...`);
+    console.log(`🔎 [ROBÔ] Executando ${arquivosQCS.length} scripts QCS...`);
     
     try {
         const binaryOptions = await sdk.binaryOptions();
@@ -147,6 +139,8 @@ async function buscarAnaliseServidor() {
         }
 
         let melhoresSinais = [];
+        
+        // Processa os ativos em lotes de 5 para não estourar a memória do Render
         for (let i = 0; i < ativosFiltrados.length; i += 5) {
             if (!global.buscando) break;
             const lote = ativosFiltrados.slice(i, i + 5);
@@ -155,9 +149,9 @@ async function buscarAnaliseServidor() {
                 const seconds = configSolicitada.timeframe === 'M5' ? 300 : 60; 
                 const layer = await sdk.realTimeChartDataLayer(ativo.id, seconds);
                 const candles = await layer.fetchAllCandles(Math.floor(Date.now() / 1000) - (250 * seconds)); 
-                if (!candles || candles.length < 50) return null;
+                if (!candles || candles.length < 210) return null;
                 
-                // Roda o código QCS de cada arquivo para o ativo
+                // Roda os scripts QCS para cada ativo
                 for (let est of arquivosQCS) {
                     const resultado = await executarScriptQCS(est.codigo, candles);
                     if (resultado) {
@@ -165,7 +159,7 @@ async function buscarAnaliseServidor() {
                             ativo: ativo.ticker, 
                             timeframe: configSolicitada.timeframe, 
                             direcao: resultado.direcao, 
-                            confianca: 95, 
+                            confianca: 95,
                             estrategia: `QCS: ${est.nome}`,
                             mercado: configSolicitada.mercado, 
                             horario: getHoraProximaVela(), 
