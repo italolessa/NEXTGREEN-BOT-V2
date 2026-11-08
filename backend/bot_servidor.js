@@ -4,14 +4,19 @@ let isBuscando = false;
 let ultimoAtivoEnviado = null;
 let tempoUltimoEnvio = 0;
 
-let configSolicitada = { timeframe: 'M1', mercado: 'OTC', ignorarAtivo: null };
+let configSolicitada = { timeframe: 'M1', mercado: 'OTC' };
+let ativosIgnoradosLista = []; // NOVA MEMÓRIA: Guarda todos os ativos já mostrados
 
-// O server.js chama essa função para atualizar a config
 global.definirConfiguracao = (config) => {
     configSolicitada = config;
-    // Não limpamos o ultimoAtivoEnviado aqui para manter a trava, 
-    // mas a exclusão do ativo será feita na hora da busca.
-    console.log(`🤖 Cérebro atualizado: Foco em ${config.timeframe} | Mercado ${config.mercado} | Ignorar: ${config.ignorarAtivo || 'Nenhum'}`);
+    console.log(`🤖 Cérebro atualizado: Foco em ${config.timeframe} | Mercado ${config.mercado}`);
+};
+
+// Função para limpar a lista de bloqueio quando o usuário pedir
+global.resetarAtivos = () => {
+    ativosIgnoradosLista = [];
+    ultimoAtivoEnviado = null;
+    console.log("🧹 Memória de ativos limpa. O robô pode buscar qualquer ativo novamente.");
 };
 
 async function iniciarBotServidor(window, tokenSsid) {
@@ -22,10 +27,8 @@ async function iniciarBotServidor(window, tokenSsid) {
         const { ClientSdk, SsidAuthMethod, BinaryOptionsDirection } = sdkModule;
         sdk = await ClientSdk.create(WS_URL, 82, new SsidAuthMethod(tokenSsid));
         global.BinaryOptionsDirection = BinaryOptionsDirection;
+        console.log("✅ SDK inicializado! Aguardando comando...");
         
-        console.log("✅ SDK inicializado! Aguardando comando de busca do App...");
-        
-        // Fica verificando se o app mandou buscar
         setInterval(async () => {
             if (!isBuscando && global.buscando) {
                 await buscarAnaliseServidor();
@@ -78,7 +81,6 @@ function calcularADX(highs, lows, closes, period = 14) {
     return { adx: dx, plusDI, minusDI };
 }
 
-// --- O CÉREBRO ESPECIALISTA (JÚRI DE ESTRATÉGIAS) ---
 function analisarGraficoComEstrategias(candles) {
     const closes = candles.map(c => c.close);
     const highs = candles.map(c => c.max);
@@ -89,7 +91,7 @@ function analisarGraficoComEstrategias(candles) {
     const rsi = calcularRSI(closes);
     const { adx } = calcularADX(highs, lows, closes);
     
-    // --- ESTRATÉGIA 1: EMAs (Tendência Forte) ---
+    // Estratégia 1: Tendência (EMAs)
     if (adx > 25) {
         const hlc3 = candles.map(c => (c.max + c.min + c.close) / 3);
         const ema200 = calcularEMA(closes, 200);
@@ -105,7 +107,7 @@ function analisarGraficoComEstrategias(candles) {
         if (cruzouBaixa) return { direcao: "PUT", estrategia: "Tendência (EMAs)", confianca: 95 };
     }
 
-    // --- ESTRATÉGIA 2: Engolfo (Reversão Institucional) ---
+    // Estratégia 2: Engolfo (Wyckoff)
     if (adx < 20) {
         const engolfoAlta = (atual.close > atual.open) && (anterior.close < anterior.open) && (atual.close > anterior.max);
         const engolfoBaixa = (atual.close < atual.open) && (anterior.close > anterior.open) && (atual.close < anterior.min);
@@ -114,7 +116,7 @@ function analisarGraficoComEstrategias(candles) {
         if (engolfoBaixa && rsi > 50) return { direcao: "PUT", estrategia: "Engolfo Wyckoff", confianca: 90 };
     }
 
-    // --- ESTRATÉGIA 3: RSI + Pavio (Exaustão) ---
+    // Estratégia 3: RSI + Pavio (Exaustão)
     const corpo = Math.abs(atual.close - atual.open);
     const pavioInferior = Math.min(atual.open, atual.close) - atual.min;
     const pavioSuperior = atual.max - Math.max(atual.open, atual.close);
@@ -122,7 +124,6 @@ function analisarGraficoComEstrategias(candles) {
     if (rsi < 30 && pavioInferior > corpo * 1.5) return { direcao: "CALL", estrategia: "Reversão (RSI + Pavio)", confianca: 88 };
     if (rsi > 70 && pavioSuperior > corpo * 1.5) return { direcao: "PUT", estrategia: "Reversão (RSI + Pavio)", confianca: 88 };
 
-    // Se nenhuma estratégia for cirúrgica o suficiente, retorna null.
     return null;
 }
 
@@ -130,26 +131,33 @@ async function buscarAnaliseServidor() {
     if (!sdk || !global.buscando) return;
     isBuscando = true;
     
-    console.log(`🔎 [ROBÔ] Lendo gráficos e buscando confluência...`);
+    console.log(`🔎 [ROBÔ] Buscando ativos (Ignorando ${ativosIgnoradosLista.length} já vistos)...`);
     
     try {
         const binaryOptions = await sdk.binaryOptions();
         const actives = binaryOptions.getActives();
         const now = sdk.currentTime();
         
-        // --- A MÁGICA PARA NÃO REPETIR ATIVO ---
-        const ativoIgnorado = configSolicitada.ignorarAtivo;
-
+        // Filtra os ativos, removendo os que já estão na lista de ignorados
         let ativosFiltrados = actives.filter(a => {
             const mercadoOk = configSolicitada.mercado === 'OTC' ? a.ticker.includes('-OTC') : !a.ticker.includes('-OTC');
             const estaAberto = a.canBeBoughtAt(now);
-            
-            // Se o ativo for o mesmo que o app pediu para ignorar, ele é removido da busca
-            const naoEhOIgnorado = ativoIgnorado ? !a.ticker.includes(ativoIgnorado) : true;
+            const jaFoiMostrado = ativosIgnoradosLista.includes(a.ticker);
 
-            return mercadoOk && estaAberto && naoEhOIgnorado;
+            return mercadoOk && estaAberto && !jaFoiMostrado;
         });
         
+        // Se todos os ativos do mercado já foram vistos, limpa a lista para recomeçar o ciclo
+        if (ativosFiltrados.length === 0) {
+            console.log("♻️ Todos os ativos já foram vistos. Reiniciando o ciclo de busca...");
+            ativosIgnoradosLista = []; // Limpa a lista
+            // Re-filtra agora com a lista limpa
+            ativosFiltrados = actives.filter(a => {
+                const mercadoOk = configSolicitada.mercado === 'OTC' ? a.ticker.includes('-OTC') : !a.ticker.includes('-OTC');
+                return mercadoOk && a.canBeBoughtAt(now);
+            });
+        }
+
         let melhoresSinais = [];
 
         for (let i = 0; i < ativosFiltrados.length; i += 5) {
@@ -162,19 +170,16 @@ async function buscarAnaliseServidor() {
         if (melhoresSinais.length > 0 && global.buscando) {
             melhoresSinais.sort((a, b) => b.confianca - a.confianca);
             const campeao = melhoresSinais[0];
-            const agora = Date.now();
             
-            // Trava de segurança para não mandar o mesmo sinal na mesma vela
-            if (campeao.ativo === ultimoAtivoEnviado && (agora - tempoUltimoEnvio) < 60000) {
-                console.log(`⏳ [IGNORADO] ${campeao.ativo} (Aguardando nova vela)`);
-            } else {
-                ultimoAtivoEnviado = campeao.ativo;
-                tempoUltimoEnvio = agora;
-                console.log(`🏆 [SINAL] ${campeao.ativo} | ${campeao.direcao} | Estratégia: ${campeao.estrategia}`);
-                if (global.adicionarSinal) global.adicionarSinal(campeao);
-            }
+            // Adiciona o novo campeão à lista de ignorados
+            ativosIgnoradosLista.push(campeao.ativo);
+            ultimoAtivoEnviado = campeao.ativo;
+            
+            console.log(`🏆 [SINAL] ${campeao.ativo} | ${campeao.direcao} | ${campeao.estrategia}`);
+            if (global.adicionarSinal) global.adicionarSinal(campeao);
+            
         } else if (global.buscando) {
-            console.log(`⚠️ Nenhum setup perfeito encontrado nos outros ativos. Retentando...`);
+            console.log(`⚠️ Nenhum setup encontrado nos ativos restantes. Retentando...`);
         }
     } catch (error) {
         console.error("❌ Erro na varredura:", error.message);

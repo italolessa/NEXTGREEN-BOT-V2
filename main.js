@@ -15,6 +15,7 @@ let pollingInterval;
 const SESSION_FILE = path.join(app.getPath('userData'), 'sessao.json');
 const RENDER_URL = 'https://nextgreen-bot-v2.onrender.com'; // COLOQUE A SUA URL AQUI
 
+// --- FUNÇÕES DE TOKEN ---
 function getTokenSalvo() {
     try { if (fs.existsSync(SESSION_FILE)) return JSON.parse(fs.readFileSync(SESSION_FILE, 'utf-8')).ssid; } 
     catch (e) { return null; } return null;
@@ -26,6 +27,7 @@ function apagarToken() {
     try { if (fs.existsSync(SESSION_FILE)) fs.unlinkSync(SESSION_FILE); } catch (e) {}
 }
 
+// --- BUSCA NA NUVEM ---
 function iniciarPollingSinais() {
     if (pollingInterval) clearInterval(pollingInterval);
     pollingInterval = setInterval(async () => {
@@ -40,6 +42,7 @@ function iniciarPollingSinais() {
     }, 5000);
 }
 
+// --- TELAS ---
 function createWelcomeWindow() {
     welcomeWindow = new BrowserWindow({
         width: 400, height: 600, resizable: false, autoHideMenuBar: true,
@@ -91,8 +94,10 @@ function abrirJanelaLogin(dadosLogin) {
     });
 }
 
+// --- INICIALIZAÇÃO ---
 app.whenReady().then(() => { createWelcomeWindow(); });
 
+// --- ROTAS IPC ---
 ipcMain.on('verificar-login-salvo', (event) => {
     const temLogin = getTokenSalvo() !== null;
     if (welcomeWindow && !welcomeWindow.isDestroyed()) welcomeWindow.webContents.send('status-login-salvo', temLogin);
@@ -100,26 +105,28 @@ ipcMain.on('verificar-login-salvo', (event) => {
 
 ipcMain.on('iniciar-login', (event, dados) => abrirJanelaLogin(dados));
 
-// --- A CORREÇÃO DO LOGIN AUTOMÁTICO AQUI ---
 ipcMain.on('login-automatico', async () => { 
-    // 1. Fecha a tela de boas-vindas e ABRE A JANELA DO ROBÔ IMEDIATAMENTE
     if (welcomeWindow) welcomeWindow.close(); 
     createMainWindow(); 
 
-    // 2. Em segundo plano (sem travar a tela), envia o token para a nuvem
     const tokenSalvo = getTokenSalvo();
     if (tokenSalvo) {
-        try { 
-            await axios.post(`${RENDER_URL}/api/atualizar-token`, { token: tokenSalvo }); 
-            console.log("✅ Token enviado para a nuvem em segundo plano.");
-        } catch(e) {
-            console.log("⚠️ Nuvem offline ou demorou a responder, mas o app abriu.");
-        }
+        try { await axios.post(`${RENDER_URL}/api/atualizar-token`, { token: tokenSalvo }); } 
+        catch(e) { console.log("Render offline, mas app abriu."); }
     }
 });
 
+// --- ROTAS DE COMANDO PARA O RENDER ---
 ipcMain.on('configurar-busca', async (event, config) => {
-    try { await axios.post(`${RENDER_URL}/api/configurar`, config); } catch (e) {}
+    try { await axios.post(`${RENDER_URL}/api/configurar`, config); } catch (e) { console.log("Erro na config"); }
+});
+
+ipcMain.on('parar-busca', async () => {
+    try { await axios.post(`${RENDER_URL}/api/parar`); } catch (e) { console.log("Erro no parar"); }
+});
+
+ipcMain.on('resetar-filtros', async () => {
+    try { await axios.post(`${RENDER_URL}/api/resetar`); } catch (e) { console.log("Erro no resetar"); }
 });
 
 ipcMain.on('fazer-logout', () => {
