@@ -12,16 +12,15 @@ let configuracaoAtual = { timeframe: 'M1', mercado: 'OTC', ignorarAtivo: null };
 app.get('/health', (req, res) => res.status(200).send('OK'));
 
 app.post('/api/configurar', (req, res) => {
-    sinaisEncontrados = []; // Limpa sinais antigos
+    sinaisEncontrados = []; 
     configuracaoAtual = req.body;
     
-    // Passa a configuração para o bot_servidor saber o que buscar
     if (global.definirConfiguracao) {
         global.definirConfiguracao(configuracaoAtual);
     }
     
     global.buscando = true; 
-    console.log(`⚙️ Busca ativada: ${configuracaoAtual.timeframe} | ${configuracaoAtual.mercado} | Ignorar: ${configuracaoAtual.ignorarAtivo || 'Nenhum'}`);
+    console.log(`⚙️ Busca ativada: ${configuracaoAtual.timeframe} | ${configuracaoAtual.mercado}`);
     res.json({ success: true });
 });
 
@@ -31,10 +30,8 @@ app.get('/api/sinais', (req, res) => {
 
 global.adicionarSinal = (sinal) => {
     if (configuracaoAtual.ignorarAtivo && sinal.ativo.includes(configuracaoAtual.ignorarAtivo)) {
-        console.log(`⏳ [IGNORADO PELO APP] ${sinal.ativo}`);
         return; 
     }
-    
     sinaisEncontrados.unshift(sinal);
     global.buscando = false; 
 };
