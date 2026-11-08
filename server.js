@@ -13,11 +13,18 @@ let tokenAtual = process.env.POLARIUM_TOKEN || '';
 
 app.get('/health', (req, res) => res.status(200).send('OK'));
 
-// --- ROTA DE ATUALIZAR TOKEN (Corrigida para o formato exigido pelo Render) ---
+// --- ROTA DE ATUALIZAR TOKEN (COM TRAVA DE ESTABILIDADE) ---
 app.post('/api/atualizar-token', async (req, res) => {
     const novoToken = req.body.token;
     if (!novoToken) return res.status(400).json({ error: "Token inválido" });
 
+    // 1. Verifica se o token é o mesmo que já está rodando
+    if (novoToken === tokenAtual) {
+        console.log("✅ Token já está ativo no servidor. Ignorando reinicialização.");
+        return res.json({ success: true, message: "Token já ativo" });
+    }
+
+    // 2. Se for um token novo, atualiza e reinicia o SDK
     tokenAtual = novoToken;
     console.log("🔄 Novo Token recebido! Iniciando conexão local e atualizando Render...");
     
@@ -29,12 +36,10 @@ app.post('/api/atualizar-token', async (req, res) => {
         const serviceId = process.env.RENDER_SERVICE_ID;
 
         if (apiKey && serviceId) {
-            // O Render exige que enviemos o array exatamente como ele retorna
             const response = await axios.get(`https://api.render.com/v1/services/${serviceId}/env-vars`, {
                 headers: { Authorization: `Bearer ${apiKey}` }
             });
             
-            // Mapeia as variáveis corretamente
             let envVars = response.data.map(item => {
                 let val = item.envVar ? item.envVar : item; 
                 if (val.key === 'POLARIUM_TOKEN') val.value = novoToken;

@@ -7,9 +7,13 @@ const Store = require('electron-store');
 const store = new Store();
 app.commandLine.appendSwitch('ignore-certificate-errors');
 
-let mainWindow, loginWindow, welcomeWindow, pollingInterval, heartbeatInterval;
+let mainWindow;
+let loginWindow;
+let welcomeWindow;
+let pollingInterval;
+
 const SESSION_FILE = path.join(app.getPath('userData'), 'sessao.json');
-const RENDER_URL = 'https://nextgreen-bot-v2.onrender.com'; // SUA URL AQUI
+const RENDER_URL = 'https://nextgreen-bot-v2.onrender.com'; // COLOQUE A SUA URL AQUI
 
 function getTokenSalvo() {
     try { if (fs.existsSync(SESSION_FILE)) return JSON.parse(fs.readFileSync(SESSION_FILE, 'utf-8')).ssid; } 
@@ -18,26 +22,10 @@ function getTokenSalvo() {
 function salvarToken(ssid) {
     try { fs.writeFileSync(SESSION_FILE, JSON.stringify({ ssid }), 'utf-8'); } catch (e) {}
 }
-
-// --- HEARTBEAT: Mantém o token do Render sempre atualizado ---
-function iniciarHeartbeat() {
-    if (heartbeatInterval) clearInterval(heartbeatInterval);
-    
-    // Verifica a cada 3 minutos se o Render está com o token
-    heartbeatInterval = setInterval(async () => {
-        const tokenSalvo = getTokenSalvo();
-        if (tokenSalvo) {
-            try {
-                await axios.post(`${RENDER_URL}/api/atualizar-token`, { token: tokenSalvo });
-                console.log("💓 Heartbeat: Token sincronizado com a nuvem.");
-            } catch (e) {
-                console.log("⚠️ Heartbeat: Nuvem offline ou reiniciando...");
-            }
-        }
-    }, 180000); // 3 minutos
+function apagarToken() {
+    try { if (fs.existsSync(SESSION_FILE)) fs.unlinkSync(SESSION_FILE); } catch (e) {}
 }
 
-// --- BUSCA NA NUVEM ---
 function iniciarPollingSinais() {
     if (pollingInterval) clearInterval(pollingInterval);
     pollingInterval = setInterval(async () => {
@@ -52,7 +40,6 @@ function iniciarPollingSinais() {
     }, 5000);
 }
 
-// --- TELAS ---
 function createWelcomeWindow() {
     welcomeWindow = new BrowserWindow({
         width: 400, height: 600, resizable: false, autoHideMenuBar: true,
@@ -71,7 +58,6 @@ function createMainWindow() {
     mainWindow.once('ready-to-show', () => {
         mainWindow.show();
         iniciarPollingSinais();
-        iniciarHeartbeat(); // Inicia o envio contínuo de token
     });
 }
 
@@ -94,7 +80,6 @@ function abrirJanelaLogin(dadosLogin) {
                     salvarToken(tokenCookie.value);
                     try {
                         await axios.post(`${RENDER_URL}/api/atualizar-token`, { token: tokenCookie.value });
-                        console.log("✅ Nuvem atualizada com o novo Token!");
                     } catch (err) { console.error("Erro ao enviar token", err.message); }
 
                     if (loginWindow) loginWindow.close();
@@ -106,7 +91,6 @@ function abrirJanelaLogin(dadosLogin) {
     });
 }
 
-// --- INICIALIZAÇÃO ---
 app.whenReady().then(() => { createWelcomeWindow(); });
 
 ipcMain.on('verificar-login-salvo', (event) => {
@@ -116,13 +100,22 @@ ipcMain.on('verificar-login-salvo', (event) => {
 
 ipcMain.on('iniciar-login', (event, dados) => abrirJanelaLogin(dados));
 
+// --- A CORREÇÃO DO LOGIN AUTOMÁTICO AQUI ---
 ipcMain.on('login-automatico', async () => { 
+    // 1. Fecha a tela de boas-vindas e ABRE A JANELA DO ROBÔ IMEDIATAMENTE
     if (welcomeWindow) welcomeWindow.close(); 
+    createMainWindow(); 
+
+    // 2. Em segundo plano (sem travar a tela), envia o token para a nuvem
     const tokenSalvo = getTokenSalvo();
     if (tokenSalvo) {
-        try { await axios.post(`${RENDER_URL}/api/atualizar-token`, { token: tokenSalvo }); } catch(e) {}
+        try { 
+            await axios.post(`${RENDER_URL}/api/atualizar-token`, { token: tokenSalvo }); 
+            console.log("✅ Token enviado para a nuvem em segundo plano.");
+        } catch(e) {
+            console.log("⚠️ Nuvem offline ou demorou a responder, mas o app abriu.");
+        }
     }
-    createMainWindow(); 
 });
 
 ipcMain.on('configurar-busca', async (event, config) => {
@@ -130,7 +123,7 @@ ipcMain.on('configurar-busca', async (event, config) => {
 });
 
 ipcMain.on('fazer-logout', () => {
-    try { if (fs.existsSync(SESSION_FILE)) fs.unlinkSync(SESSION_FILE); } catch (e) {}
+    apagarToken();
     if (mainWindow) mainWindow.close();
     createWelcomeWindow();
 });
