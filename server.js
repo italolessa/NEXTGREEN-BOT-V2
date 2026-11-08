@@ -13,13 +13,13 @@ let tokenAtual = process.env.POLARIUM_TOKEN || '';
 
 app.get('/health', (req, res) => res.status(200).send('OK'));
 
-// Atualiza o Token via API do Render
+// --- ROTA DE ATUALIZAR TOKEN (Corrigida para o formato exigido pelo Render) ---
 app.post('/api/atualizar-token', async (req, res) => {
     const novoToken = req.body.token;
     if (!novoToken) return res.status(400).json({ error: "Token inválido" });
 
     tokenAtual = novoToken;
-    console.log("🔄 Novo Token recebido do App! Iniciando conexão local e atualizando Render...");
+    console.log("🔄 Novo Token recebido! Iniciando conexão local e atualizando Render...");
     
     const { iniciarBotServidor } = require('./backend/bot_servidor');
     iniciarBotServidor(null, tokenAtual);
@@ -29,14 +29,16 @@ app.post('/api/atualizar-token', async (req, res) => {
         const serviceId = process.env.RENDER_SERVICE_ID;
 
         if (apiKey && serviceId) {
+            // O Render exige que enviemos o array exatamente como ele retorna
             const response = await axios.get(`https://api.render.com/v1/services/${serviceId}/env-vars`, {
                 headers: { Authorization: `Bearer ${apiKey}` }
             });
             
-            let envVars = response.data.map(env => {
-                // A API do Render retorna um objeto com "envVar", precisamos ajustar
-                if (env.envVar && env.envVar.key === 'POLARIUM_TOKEN') env.envVar.value = novoToken;
-                return env;
+            // Mapeia as variáveis corretamente
+            let envVars = response.data.map(item => {
+                let val = item.envVar ? item.envVar : item; 
+                if (val.key === 'POLARIUM_TOKEN') val.value = novoToken;
+                return val;
             });
 
             await axios.put(`https://api.render.com/v1/services/${serviceId}/env-vars`, envVars, {
@@ -62,7 +64,7 @@ app.post('/api/configurar', (req, res) => {
     res.json({ success: true });
 });
 
-// --- NOVA ROTA: Parar a busca (para o celular) ---
+// --- ROTA DE PARAR (Para o Celular desligar o radar) ---
 app.post('/api/parar', (req, res) => {
     global.buscando = false;
     sinaisEncontrados = []; 
