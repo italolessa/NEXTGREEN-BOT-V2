@@ -1,9 +1,0 @@
-directories:
-  output: dist
-  buildResources: build
-appId: com.nextgreen.bot
-productName: NextGreen Bot
-win:
-  target: nsis
-files: []
-electronVersion: 29.4.6

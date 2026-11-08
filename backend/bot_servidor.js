@@ -15,14 +15,27 @@ global.definirConfiguracao = (config) => {
 async function iniciarBotServidor(window, tokenSsid) {
     if (!tokenSsid) return console.error("❌ Token não configurado.");
     console.log("⏳ Iniciando SDK no servidor...");
+    
     try {
         const sdkModule = await import('@quadcode-tech/client-sdk-js');
-        const { ClientSdk, SsidAuthMethod, BinaryOptionsDirection } = sdkModule;
+        const { ClientSdk, SsidAuthMethod, WsConnectionStateEnum, BinaryOptionsDirection } = sdkModule;
+        
         sdk = await ClientSdk.create(WS_URL, 82, new SsidAuthMethod(tokenSsid));
         global.BinaryOptionsDirection = BinaryOptionsDirection;
         
-        console.log("✅ SDK inicializado! Aguardando comando...");
-        
+        // --- MONITORAMENTO DE AUTENTICAÇÃO (O "Watchdog" do Token) ---
+        const wsConnectionState = await sdk.wsConnectionState();
+        wsConnectionState.subscribeOnStateChanged((state) => {
+            if (state === WsConnectionStateEnum.Authenticated) {
+                console.log("✅ SDK Autenticado e pronto para operar!");
+            } else if (state === WsConnectionStateEnum.AuthenticationFailed) {
+                console.error("🚨 ALERTA: TOKEN EXPIRADO! O robô na nuvem parou de funcionar.");
+                console.error("👉 SOLUÇÃO: Abra o aplicativo no seu PC e faça o login para enviar um Token novo automaticamente.");
+                global.buscando = false; // Garante que a busca pare
+            }
+        });
+        // -----------------------------------------------------------------
+
         setInterval(async () => {
             if (!isBuscando && global.buscando) {
                 await buscarAnaliseServidor();
@@ -87,7 +100,6 @@ function analisarGraficoComEstrategias(candles) {
     const { adx } = calcularADX(highs, lows, closes);
     
     // --- ESTRATÉGIA 1: EMAs (Tendência Forte) ---
-    // Usada quando o mercado está claramente andando para um lado (ADX > 25)
     if (adx > 25) {
         const hlc3 = candles.map(c => (c.max + c.min + c.close) / 3);
         const ema200 = calcularEMA(closes, 200);
@@ -104,7 +116,6 @@ function analisarGraficoComEstrategias(candles) {
     }
 
     // --- ESTRATÉGIA 2: Engolfo (Reversão Institucional) ---
-    // Usada quando o mercado está lateral, mas há uma absorção forte
     if (adx < 20) {
         const engolfoAlta = (atual.close > atual.open) && (anterior.close < anterior.open) && (atual.close > anterior.max);
         const engolfoBaixa = (atual.close < atual.open) && (anterior.close > anterior.open) && (atual.close < anterior.min);
@@ -114,7 +125,6 @@ function analisarGraficoComEstrategias(candles) {
     }
 
     // --- ESTRATÉGIA 3: RSI + Pavio (Exaustão) ---
-    // Usada quando o preço bate em um fundo ou topo e volta com força
     const corpo = Math.abs(atual.close - atual.open);
     const pavioInferior = Math.min(atual.open, atual.close) - atual.min;
     const pavioSuperior = atual.max - Math.max(atual.open, atual.close);
@@ -122,7 +132,6 @@ function analisarGraficoComEstrategias(candles) {
     if (rsi < 30 && pavioInferior > corpo * 1.5) return { direcao: "CALL", estrategia: "Reversão (RSI + Pavio)", confianca: 88 };
     if (rsi > 70 && pavioSuperior > corpo * 1.5) return { direcao: "PUT", estrategia: "Reversão (RSI + Pavio)", confianca: 88 };
 
-    // Se nenhuma estratégia for cirúrgica o suficiente, retorna null.
     return null;
 }
 
@@ -183,7 +192,6 @@ async function analisarAtivoServidor(active, mercado, timeframe) {
         
         if (!candles || candles.length < 210) return null;
 
-        // O Cérebro Especialista analisa o gráfico
         const resultado = analisarGraficoComEstrategias(candles);
 
         if (resultado) {
