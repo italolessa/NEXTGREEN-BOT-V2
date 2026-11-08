@@ -11,7 +11,6 @@ let tempoUltimoEnvio = 0;
 let configSolicitada = { timeframe: 'M1', mercado: 'OTC' };
 let ativosIgnoradosLista = [];
 
-// --- LEITOR DE ARQUIVOS QCS/LUA ---
 function carregarEstrategiasQCS() {
     const pasta = path.join(__dirname, '..', 'estrategias_txt');
     const estrategias = [];
@@ -21,10 +20,7 @@ function carregarEstrategiasQCS() {
     for (const arquivo of arquivos) {
         if (arquivo.endsWith('.txt')) {
             const conteudo = fs.readFileSync(path.join(pasta, arquivo), 'utf-8');
-            // Filtra apenas arquivos que parecem ser scripts QCS válidos
-            if (conteudo.includes('instrument') || conteudo.includes('plot')) {
-                estrategias.push({ nome: arquivo.replace('.txt', ''), codigo: conteudo });
-            }
+            estrategias.push({ nome: arquivo.replace('.txt', ''), codigo: conteudo });
         }
     }
     return estrategias;
@@ -62,37 +58,65 @@ async function iniciarBotServidor(window, tokenSsid) {
     }
 }
 
-// --- EXECUTOR DO SCRIPT QCS (LUA) COM TIMEOUT ---
+// --- MATEMÁTICA BASE PARA O DICIONÁRIO LUA ---
+function calcSMA(arr, period) {
+    if (arr.length < period) return arr[arr.length - 1];
+    const slice = arr.slice(-period);
+    return slice.reduce((a, b) => a + b, 0) / period;
+}
+
+function calcRSI(closes, period = 14) {
+    if (closes.length < period) return 50;
+    let gains = 0, losses = 0;
+    for (let i = closes.length - period; i < closes.length; i++) {
+        const diff = closes[i] - closes[i - 1];
+        if (diff >= 0) gains += diff; else losses -= diff;
+    }
+    return 100 - (100 / (1 + (gains / (losses || 1))));
+}
+
+// --- EXECUTOR DO SCRIPT QCS COM DICIONÁRIO ---
 async function executarScriptQCS(codigoLua, candles) {
     const factory = new LuaFactory();
     const lua = await factory.createEngine();
 
     try {
         const closes = candles.map(c => c.close);
-        const opens = candles.map(c => c.open);
         const highs = candles.map(c => c.max);
         const lows = candles.map(c => c.min);
 
-        lua.global.set('close', closes);
-        lua.global.set('open', opens);
-        lua.global.set('high', highs);
-        lua.global.set('low', lows);
-
         let sinalGerado = null;
-        lua.global.set('plot_signal', (direcao) => {
-            sinalGerado = direcao; 
-        });
 
-        // TRAVA DE SEGURANÇA: Tempo limite de 2 segundos por script
+        // DICIONÁRIO DE FUNÇÕES DA QUADCODE (MOCK)
+        const apiMock = {
+            sma: (arr, period) => calcSMA(arr, period),
+            rsi: (arr, period) => calcRSI(arr, period),
+            crossover: (a, b) => a > b, // Simplificação
+            crossunder: (a, b) => a < b,
+            plot_signal: (direcao) => { sinalGerado = direcao; },
+            input: (name, defaultVal) => defaultVal,
+            instrument: () => "ATIVO_ATUAL",
+            close: closes,
+            high: highs,
+            low: lows,
+            open: candles.map(c => c.open)
+        };
+
+        // Injeta o dicionário no ambiente Lua
+        for (const [key, func] of Object.entries(apiMock)) {
+            lua.global.set(key, func);
+        }
+
         const timeoutPromise = new Promise((_, reject) => 
-            setTimeout(() => reject(new Error("Timeout no script QCS")), 2000)
+            setTimeout(() => reject(new Error("Timeout")), 2000)
         );
 
-        // Executa o código do arquivo .txt no motor Lua
-        const scriptPromise = lua.doString(codigoLua);
-
-        // Corre a execução contra o tempo limite
-        await Promise.race([scriptPromise, timeoutPromise]);
+        // Tenta rodar o script. Se der erro de sintaxe do Lua, ignoramos.
+        try {
+            await Promise.race([lua.doString(codigoLua), timeoutPromise]);
+        } catch (e) {
+            return null; 
+        }
 
         if (sinalGerado) {
             return { direcao: sinalGerado, estrategia: "QCS Executado" };
@@ -100,10 +124,9 @@ async function executarScriptQCS(codigoLua, candles) {
         return null;
 
     } catch (err) {
-        // Se o script tiver erro de sintaxe ou estourar o tempo, ignora silenciosamente
-        return null;
+        return null; 
     } finally {
-        lua.global.close(); // Fecha o motor Lua para liberar memória
+        lua.global.close(); 
     }
 }
 
@@ -114,7 +137,6 @@ async function buscarAnaliseServidor() {
     const arquivosQCS = carregarEstrategiasQCS();
 
     if (arquivosQCS.length === 0) {
-        console.log("⚠️ Nenhum arquivo QCS válido encontrado na pasta!");
         isBuscando = false;
         return;
     }
@@ -140,7 +162,6 @@ async function buscarAnaliseServidor() {
 
         let melhoresSinais = [];
         
-        // Processa os ativos em lotes de 5 para não estourar a memória do Render
         for (let i = 0; i < ativosFiltrados.length; i += 5) {
             if (!global.buscando) break;
             const lote = ativosFiltrados.slice(i, i + 5);
@@ -151,7 +172,6 @@ async function buscarAnaliseServidor() {
                 const candles = await layer.fetchAllCandles(Math.floor(Date.now() / 1000) - (250 * seconds)); 
                 if (!candles || candles.length < 210) return null;
                 
-                // Roda os scripts QCS para cada ativo
                 for (let est of arquivosQCS) {
                     const resultado = await executarScriptQCS(est.codigo, candles);
                     if (resultado) {
