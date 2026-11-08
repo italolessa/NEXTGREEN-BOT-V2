@@ -1,5 +1,6 @@
 const express = require('express');
 const cors = require('cors');
+const axios = require('axios'); // Precisamos do axios aqui
 const app = express();
 const port = process.env.PORT || 10000;
 
@@ -10,55 +11,68 @@ let sinaisEncontrados = [];
 let configuracaoAtual = { timeframe: 'M1', mercado: 'OTC', ignorarAtivo: null };
 let tokenAtual = process.env.POLARIUM_TOKEN || ''; 
 
-// Rota de saúde para o UptimeRobot não deixar o servidor dormir
 app.get('/health', (req, res) => res.status(200).send('OK'));
 
-// --- ROTA MÁGICA: Recebe o token do seu PC e reinicia o robô ---
-app.post('/api/atualizar-token', (req, res) => {
+// --- A ATUALIZAÇÃO DEFINITIVA ---
+app.post('/api/atualizar-token', async (req, res) => {
     const novoToken = req.body.token;
-    if (novoToken) {
-        tokenAtual = novoToken;
-        console.log("🔄 Novo Token recebido do App! Reiniciando conexão com a Polarium...");
-        
-        const { iniciarBotServidor } = require('./backend/bot_servidor');
-        // Reinicia o bot com o token novo
-        iniciarBotServidor(null, tokenAtual);
-        
-        res.json({ success: true, message: "Token atualizado e bot reiniciado na nuvem!" });
-    } else {
-        res.status(400).json({ error: "Token inválido" });
+    if (!novoToken) return res.status(400).json({ error: "Token inválido" });
+
+    tokenAtual = novoToken;
+    console.log("🔄 Novo Token recebido do App! Iniciando conexão local e atualizando Render...");
+    
+    // 1. Inicia o bot com o token novo na memória
+    const { iniciarBotServidor } = require('./backend/bot_servidor');
+    iniciarBotServidor(null, tokenAtual);
+
+    // 2. Salva o token nas variáveis de ambiente do Render via API
+    try {
+        const apiKey = process.env.RENDER_API_KEY;
+        const serviceId = process.env.RENDER_SERVICE_ID;
+
+        if (apiKey && serviceId) {
+            // Pega a lista atual de variáveis
+            const response = await axios.get(`https://api.render.com/v1/services/${serviceId}/env-vars`, {
+                headers: { Authorization: `Bearer ${apiKey}` }
+            });
+            
+            // Atualiza o valor do POLARIUM_TOKEN
+            let envVars = response.data.map(env => {
+                if (env.key === 'POLARIUM_TOKEN') env.value = novoToken;
+                return env;
+            });
+
+            // Envia de volta para o Render
+            await axios.put(`https://api.render.com/v1/services/${serviceId}/env-vars`, envVars, {
+                headers: { Authorization: `Bearer ${apiKey}` }
+            });
+            
+            console.log("✅ Token salvo permanentemente no Render! O servidor está reiniciando...");
+        }
+    } catch (error) {
+        console.error("❌ Erro ao salvar token via API:", error.message);
     }
+
+    res.json({ success: true, message: "Token atualizado!" });
 });
 
-// Rota que o App envia a configuração (M1/M5, OTC/Aberto)
 app.post('/api/configurar', (req, res) => {
     sinaisEncontrados = []; 
     configuracaoAtual = req.body;
-    
-    if (global.definirConfiguracao) {
-        global.definirConfiguracao(configuracaoAtual);
-    }
-    
+    if (global.definirConfiguracao) global.definirConfiguracao(configuracaoAtual);
     global.buscando = true; 
     console.log(`⚙️ Busca ativada: ${configuracaoAtual.timeframe} | ${configuracaoAtual.mercado}`);
     res.json({ success: true });
 });
 
-// Rota que o App busca os sinais
-app.get('/api/sinais', (req, res) => {
-    res.json(sinaisEncontrados);
-});
+app.get('/api/sinais', (req, res) => res.json(sinaisEncontrados));
 
-// Função que o bot usa para salvar o sinal
 global.adicionarSinal = (sinal) => {
-    if (configuracaoAtual.ignorarAtivo && sinal.ativo.includes(configuracaoAtual.ignorarAtivo)) {
-        return; 
-    }
+    if (configuracaoAtual.ignorarAtivo && sinal.ativo.includes(configuracaoAtual.ignorarAtivo)) return; 
     sinaisEncontrados.unshift(sinal);
     global.buscando = false; 
 };
 
-// --- INICIALIZAÇÃO DO BOT NA NUVEM ---
 const { iniciarBotServidor } = require('./backend/bot_servidor');
 if (tokenAtual && tokenAtual !== 'COLE_SEU_TOKEN_AQUI') {
     iniciarBotServidor(null, tokenAtual);
