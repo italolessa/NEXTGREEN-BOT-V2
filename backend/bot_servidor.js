@@ -4,7 +4,18 @@ let isBuscando = false;
 let ultimoAtivoEnviado = null;
 let configSolicitada = { timeframe: 'M1', mercado: 'OTC' };
 let ativosIgnoradosLista = [];
-let sinaisParaAvaliar = []; // Memória para conferir os Win/Loss
+let sinaisParaAvaliar = []; 
+
+// --- LISTA BRANCA DE ATIVOS REAIS DA CORRETORA ---
+const listaPermitida = [
+    'EURUSD', 'GBPUSD', 'USDJPY', 'AUDUSD', 'USDCAD', 'USDCHF', 'NZDUSD',
+    'EURGBP', 'EURJPY', 'GBPJPY', 'AUDCAD', 'EURAUD', 'EURCHF', 'AUDJPY', 'CHFJPY',
+    'CADJPY', 'NZDJPY', 'GBPCHF', 'GBPAUD', 'GBPCAD', 'AUDNZD', 'EURNZD',
+    'USDSEK', 'USDMXN', 'USDZAR', 'USDTHB', 'USDSGD',
+    'BTCUSD', 'ETHUSD', 'LTCUSD', 'XRPUSD', 'SOLUSD', 'BNBUSD', 'DOGEUSD',
+    'XAUUSD', 'XAGUSD', 'US100', 'US500', 'US30', 'GER30', 'UK100',
+    'AAPL', 'MSFT', 'TSLA', 'AMZN', 'GOOGL', 'META', 'NVDA', 'NFLX'
+];
 
 global.definirConfiguracao = (config) => {
     configSolicitada = config;
@@ -25,16 +36,16 @@ async function iniciarBotServidor(window, tokenSsid) {
         sdk = await ClientSdk.create(WS_URL, 82, new SsidAuthMethod(tokenSsid));
         global.BinaryOptionsDirection = BinaryOptionsDirection;
 
-        console.log("✅ SDK inicializado! Cérebro Sniper com Auto-Avaliação ativo.");
+        console.log("✅ SDK inicializado! Filtro de Ativos Permitidos e EMA9 ativados.");
 
-        // Loop de busca de sinais (a cada 15 segundos)
+        // Loop de busca de sinais
         setInterval(async () => {
             if (!isBuscando && global.buscando) {
                 await buscarAnaliseServidor();
             }
         }, 15000);
 
-        // Loop de checagem de resultados (a cada 10 segundos)
+        // Loop de checagem de resultados (Auto-Avaliação)
         setInterval(async () => {
             await verificarResultados();
         }, 10000);
@@ -96,7 +107,7 @@ function calcularATR(highs, lows, closes, period = 14) {
     return trs.slice(-period).reduce((a, b) => a + b, 0) / period;
 }
 
-// --- O CÉREBRO SNIPER HÍBRIDO ---
+// --- O CÉREBRO SNIPER HÍBRIDO (COM FILTRO EMA 9) ---
 function analisarGraficoComEstrategias(candles, nomeAtivo) {
     const closes = candles.map(c => c.close);
     const highs = candles.map(c => c.max);
@@ -108,9 +119,11 @@ function analisarGraficoComEstrategias(candles, nomeAtivo) {
     const rsi = calcularRSI(closes, 14);
     const atr = calcularATR(highs, lows, closes, 14);
     const adxData = calcularADX(highs, lows, closes, 14);
+    
+    // MÉDIAS MÓVEIS: Curto Prazo (9) e Médio Prazo (50)
+    const ema9 = calcularEMA(closes, 9); 
     const ema50 = calcularEMA(closes, 50); 
 
-    // FILTRO DE HORÁRIO (08:00 - 18:00 BRT)
     const horaAtual = new Date().getHours();
     if (horaAtual < 8 || horaAtual >= 18) return null; 
 
@@ -119,15 +132,17 @@ function analisarGraficoComEstrategias(candles, nomeAtivo) {
 
     // ESTRATÉGIA 1: TENDÊNCIA FORTE (Pullback)
     if (forcaTendencia > 25) {
-        if (spike.close < ema50 && atual.close > ema50 && atual.close > atual.open) {
+        // CALL: Só entra se o preço estiver acima da EMA 9 (maré de curto prazo é de alta)
+        if (spike.close < ema50 && atual.close > ema50 && atual.close > atual.open && atual.close > ema9) {
             sinalEncontrado = { direcao: "CALL", estrategia: "Tendência (Pullback Compra)", confianca: 90 };
         }
-        if (spike.close > ema50 && atual.close < ema50 && atual.close < atual.open) {
+        // PUT: Só entra se o preço estiver abaixo da EMA 9 (maré de curto prazo é de baixa)
+        if (spike.close > ema50 && atual.close < ema50 && atual.close < atual.open && atual.close < ema9) {
             sinalEncontrado = { direcao: "PUT", estrategia: "Tendência (Pullback Venda)", confianca: 90 };
         }
     }
 
-    // ESTRATÉGIA 2: SPIKE REVERSAL COM CONFIRMAÇÃO (Mercado Lateral)
+    // ESTRATÉGIA 2: SPIKE REVERSAL
     if (!sinalEncontrado && forcaTendencia < 20) {
         const rangeSpike = spike.max - spike.min;
         const isSpike = rangeSpike > (atr * 2); 
@@ -137,10 +152,12 @@ function analisarGraficoComEstrategias(candles, nomeAtivo) {
             const pavioSuperior = spike.max - Math.max(spike.open, spike.close);
             const pavioInferior = Math.min(spike.open, spike.close) - spike.min;
 
-            if (spike.close > spike.open && pavioSuperior > corpoSpike && rsi > 65 && atual.close < atual.open && atual.close < spike.close) {
+            // PUT: Preço tem que estar abaixo ou na EMA 9. Se estiver voando, bloqueia.
+            if (spike.close > spike.open && pavioSuperior > corpoSpike && rsi > 65 && atual.close < atual.open && atual.close < spike.close && atual.close <= ema9) {
                 sinalEncontrado = { direcao: "PUT", estrategia: "Spike Reversal (Venda)", confianca: 92 };
             }
-            if (spike.close < spike.open && pavioInferior > corpoSpike && rsi < 35 && atual.close > atual.open && atual.close > spike.close) {
+            // CALL: Preço tem que estar acima ou na EMA 9.
+            if (spike.close < spike.open && pavioInferior > corpoSpike && rsi < 35 && atual.close > atual.open && atual.close > spike.close && atual.close >= ema9) {
                 sinalEncontrado = { direcao: "CALL", estrategia: "Spike Reversal (Compra)", confianca: 92 };
             }
         }
@@ -161,12 +178,21 @@ async function buscarAnaliseServidor() {
             const mercadoOk = configSolicitada.mercado === 'OTC' ? a.ticker.includes('-OTC') : !a.ticker.includes('-OTC');
             const estaAberto = a.canBeBoughtAt(now);
             const jaFoiMostrado = ativosIgnoradosLista.includes(a.ticker);
-            return mercadoOk && estaAberto && !jaFoiMostrado;
+            
+            // MÁGICA DO FILTRO WHITELIST
+            const tickerLimpo = a.ticker.replace('-OTC', '').toUpperCase();
+            const estaNaListaPermitida = listaPermitida.includes(tickerLimpo);
+
+            return mercadoOk && estaAberto && !jaFoiMostrado && estaNaListaPermitida;
         });
 
         if (ativosFiltrados.length === 0) {
             ativosIgnoradosLista = [];
-            ativosFiltrados = actives.filter(a => (configSolicitada.mercado === 'OTC' ? a.ticker.includes('-OTC') : !a.ticker.includes('-OTC')) && a.canBeBoughtAt(now));
+            ativosFiltrados = actives.filter(a => {
+                const mercadoOk = configSolicitada.mercado === 'OTC' ? a.ticker.includes('-OTC') : !a.ticker.includes('-OTC');
+                const tickerLimpo = a.ticker.replace('-OTC', '').toUpperCase();
+                return mercadoOk && a.canBeBoughtAt(now) && listaPermitida.includes(tickerLimpo);
+            });
         }
         let melhoresSinais = [];
 
@@ -196,7 +222,7 @@ async function buscarAnaliseServidor() {
                         mercado: configSolicitada.mercado,
                         horario: getHoraProximaVela(),
                         id: Date.now(),
-                        status: "PENDENTE" // Status inicial
+                        status: "PENDENTE"
                     };
                 }
                 return null;
@@ -217,7 +243,6 @@ async function buscarAnaliseServidor() {
                 ultimoAtivoEnviado = campeao.tickerReal;
                 console.log(`\n🏆 [SINAL] ${campeao.ativo} | ${campeao.direcao} | ${campeao.estrategia} | Entrada: ${campeao.horario}`);
                 
-                // Salva na lista para o robô conferir se deu WIN ou LOSS depois
                 sinaisParaAvaliar.push(campeao); 
                 
                 if (global.adicionarSinal) global.adicionarSinal(campeao);
@@ -230,61 +255,58 @@ async function buscarAnaliseServidor() {
     }
 }
 
-// --- FUNÇÃO DE AUTO-AVALIAÇÃO (WIN/LOSS) ---
+// --- FUNÇÃO DE AUTO-AVALIAÇÃO (WIN/LOSS) COM RETRY ---
 async function verificarResultados() {
     if (!sdk || sinaisParaAvaliar.length === 0) return;
     
     const agora = new Date();
     const segundosAgora = agora.getSeconds();
     
-    // Roda apenas nos primeiros 10 segundos de cada minuto para pegar a vela recém-fechada
-    if (segundosAgora > 10) return; 
+    // Roda entre os segundos 15 e 25 para dar tempo da Polarium processar
+    if (segundosAgora < 15 || segundosAgora > 25) return; 
 
     const sinaisParaRemover = [];
 
     for (let i = 0; i < sinaisParaAvaliar.length; i++) {
         const sinal = sinaisParaAvaliar[i];
+        let sucesso = false;
         
-        try {
-            const seconds = sinal.timeframe === 'M5' ? 300 : 60;
-            const layer = await sdk.realTimeChartDataLayer(sinal.tickerReal, seconds);
-            const candles = await layer.fetchAllCandles(Math.floor(Date.now() / 1000) - (5 * seconds));
+        for (let tentativa = 1; tentativa <= 2; tentativa++) {
+            try {
+                const seconds = sinal.timeframe === 'M5' ? 300 : 60;
+                const layer = await sdk.realTimeChartDataLayer(sinal.tickerReal, seconds);
+                const candles = await layer.fetchAllCandles(Math.floor(Date.now() / 1000) - (5 * seconds));
 
-            // TRAVA DE SEGURANÇA: Se não vier dados suficientes, ignora (evita erro 4040)
-            if (!candles || candles.length < 2) {
-                console.log(`⚠️ [AVALIAÇÃO] Sem dados para ${sinal.ativo}. Ignorando resultado.`);
-                sinaisParaRemover.push(i);
-                continue;
+                if (candles && candles.length >= 2) {
+                    const velaFechada = candles[candles.length - 2];
+                    
+                    let result = "EMPATE";
+                    if (sinal.direcao === "CALL" || sinal.direcao === "COMPRA") {
+                        if (velaFechada.close > velaFechada.open) result = "WIN";
+                        else if (velaFechada.close < velaFechada.open) result = "LOSS";
+                    } else if (sinal.direcao === "PUT" || sinal.direcao === "VENDA") {
+                        if (velaFechada.close < velaFechada.open) result = "WIN";
+                        else if (velaFechada.close > velaFechada.open) result = "LOSS";
+                    }
+
+                    sinal.status = result;
+                    console.log(`📊 [RESULTADO] ${sinal.ativo} | ${sinal.direcao} | ${result}`);
+                    
+                    if (global.adicionarSinal) global.adicionarSinal(sinal);
+                    sucesso = true;
+                    break; 
+                }
+            } catch (e) {
+                if (tentativa === 2) {
+                    console.log(`❌ [AVALIAÇÃO] Erro definitivo ao buscar dados de ${sinal.ativo}. Removendo.`);
+                } else {
+                    await new Promise(resolve => setTimeout(resolve, 2000));
+                }
             }
-
-            const velaFechada = candles[candles.length - 2];
-            
-            let result = "EMPATE";
-            if (sinal.direcao === "CALL" || sinal.direcao === "COMPRA") {
-                if (velaFechada.close > velaFechada.open) result = "WIN";
-                else if (velaFechada.close < velaFechada.open) result = "LOSS";
-            } else if (sinal.direcao === "PUT" || sinal.direcao === "VENDA") {
-                if (velaFechada.close < velaFechada.open) result = "WIN";
-                else if (velaFechada.close > velaFechada.open) result = "LOSS";
-            }
-
-            sinal.status = result;
-            console.log(`📊 [RESULTADO] ${sinal.ativo} | ${sinal.direcao} | ${result}`);
-            
-            // Envia o sinal atualizado de volta para o app
-            if (global.adicionarSinal) global.adicionarSinal(sinal);
-            
-            // Remove da lista de pendentes
-            sinaisParaRemover.push(i);
-            
-        } catch (e) {
-            // Se der erro na API (ex: bad routing), remove da fila para não travar
-            console.log(`❌ [AVALIAÇÃO] Erro ao buscar dados de ${sinal.ativo}. Removendo da fila.`);
-            sinaisParaRemover.push(i);
         }
+        sinaisParaRemover.push(i);
     }
 
-    // Limpa a lista de sinais já avaliados
     for (let i = sinaisParaRemover.length - 1; i >= 0; i--) {
         sinaisParaAvaliar.splice(sinaisParaRemover[i], 1);
     }
