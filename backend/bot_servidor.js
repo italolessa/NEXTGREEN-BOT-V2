@@ -24,7 +24,7 @@ async function iniciarBotServidor(window, tokenSsid) {
         sdk = await ClientSdk.create(WS_URL, 82, new SsidAuthMethod(tokenSsid));
         global.BinaryOptionsDirection = BinaryOptionsDirection;
 
-        console.log("✅ SDK inicializado! Cérebro Sniper Híbrido (Confirmação de Reversão) ativo.");
+        console.log("✅ SDK inicializado! Cérebro Sniper (com Trava de Tempo) ativo.");
 
         setInterval(async () => {
             if (!isBuscando && global.buscando) {
@@ -88,13 +88,12 @@ function calcularATR(highs, lows, closes, period = 14) {
     return trs.slice(-period).reduce((a, b) => a + b, 0) / period;
 }
 
-// --- O CÉREBRO SNIPER HÍBRIDO (COM CONFIRMAÇÃO DE REVERSÃO) ---
+// --- O CÉREBRO SNIPER HÍBRIDO ---
 function analisarGraficoComEstrategias(candles, nomeAtivo) {
     const closes = candles.map(c => c.close);
     const highs = candles.map(c => c.max);
     const lows = candles.map(c => c.min);
     
-    // Agora precisamos olhar 3 velas: a atual (confirmação), a anterior (spike) e a retrasada
     const atual = candles[candles.length - 1];
     const spike = candles[candles.length - 2]; 
     
@@ -135,11 +134,11 @@ function analisarGraficoComEstrategias(candles, nomeAtivo) {
             const pavioSuperior = spike.max - Math.max(spike.open, spike.close);
             const pavioInferior = Math.min(spike.open, spike.close) - spike.min;
 
-            // PUT: Spike de Alta na vela ANTERIOR. A vela ATUAL (confirmação) tem que fechar VERMELHA.
+            // PUT Confirmado
             if (spike.close > spike.open && pavioSuperior > corpoSpike && rsi > 65 && atual.close < atual.open && atual.close < spike.close) {
                 sinalEncontrado = { direcao: "PUT", estrategia: "Spike Reversal Confirmado (Venda)", confianca: 92 };
             }
-            // CALL: Spike de Baixa na vela ANTERIOR. A vela ATUAL (confirmação) tem que fechar VERDE.
+            // CALL Confirmado
             if (spike.close < spike.open && pavioInferior > corpoSpike && rsi < 35 && atual.close > atual.open && atual.close > spike.close) {
                 sinalEncontrado = { direcao: "CALL", estrategia: "Spike Reversal Confirmado (Compra)", confianca: 92 };
             }
@@ -209,11 +208,21 @@ async function buscarAnaliseServidor() {
         if (melhoresSinais.length > 0 && global.buscando) {
             melhoresSinais.sort((a, b) => b.confianca - a.confianca);
             const campeao = melhoresSinais[0];
-            ativosIgnoradosLista.push(campeao.tickerReal);
-            ultimoAtivoEnviado = campeao.tickerReal;
+            
+            // --- TRAVA DE SEGURANÇA DE TEMPO ---
+            const agora = new Date();
+            const segundosRestantes = 60 - agora.getSeconds();
+            
+            if (segundosRestantes < 15) {
+                console.log(`⏳ [AGUARDANDO] Sinal no ${campeao.ativo} detectado, mas faltam ${segundosRestantes}s para virar a vela. Segurando para o próximo ciclo.`);
+                // Não envia o sinal agora, espera o loop de 15 segundos rodar de novo
+            } else {
+                ativosIgnoradosLista.push(campeao.tickerReal);
+                ultimoAtivoEnviado = campeao.tickerReal;
 
-            console.log(`\n🏆 [SINAL] ${campeao.ativo} | ${campeao.direcao} | ${campeao.estrategia} (Confiança: ${campeao.confianca}%)`);
-            if (global.adicionarSinal) global.adicionarSinal(campeao);
+                console.log(`\n🏆 [SINAL] ${campeao.ativo} | ${campeao.direcao} | ${campeao.estrategia} (Confiança: ${campeao.confianca}%)`);
+                if (global.adicionarSinal) global.adicionarSinal(campeao);
+            }
         } else if (global.buscando) {
             console.log(`\n⚠️ Nenhum setup encontrado. Retentando...`);
         }
