@@ -24,7 +24,7 @@ async function iniciarBotServidor(window, tokenSsid) {
         sdk = await ClientSdk.create(WS_URL, 82, new SsidAuthMethod(tokenSsid));
         global.BinaryOptionsDirection = BinaryOptionsDirection;
 
-        console.log("✅ SDK inicializado! Cérebro Híbrido Definitivo ativo.");
+        console.log("✅ SDK inicializado! Cérebro Sniper Híbrido ativo.");
 
         setInterval(async () => {
             if (!isBuscando && global.buscando) {
@@ -88,7 +88,7 @@ function calcularATR(highs, lows, closes, period = 14) {
     return trs.slice(-period).reduce((a, b) => a + b, 0) / period;
 }
 
-// --- O CÉREBRO HÍBRIDO (CONFLUÊNCIA + IMPULSO) ---
+// --- O CÉREBRO SNIPER HÍBRIDO ---
 function analisarGraficoComEstrategias(candles) {
     const closes = candles.map(c => c.close);
     const highs = candles.map(c => c.max);
@@ -96,60 +96,46 @@ function analisarGraficoComEstrategias(candles) {
     const atual = candles[candles.length - 1];
     const anterior = candles[candles.length - 2];
 
-    const ema50 = calcularEMA(closes, 50);
-    const ema200 = calcularEMA(closes, 200);
     const rsi = calcularRSI(closes, 14);
     const atr = calcularATR(highs, lows, closes, 14);
     const adxData = calcularADX(highs, lows, closes, 14);
+    const ema50 = calcularEMA(closes, 50);
 
-    let vies = null;
-    if (ema50 > ema200 && atual.close > ema200) vies = "CALL";
-    if (ema50 < ema200 && atual.close < ema200) vies = "PUT";
+    // Filtro de Horário (08:00 - 18:00 BRT)
+    const horaAtual = new Date().getHours();
+    if (horaAtual < 8 || horaAtual >= 18) {
+        return null; // Fora do horário de operação
+    }
 
     const forcaTendencia = adxData.adx;
     let sinalEncontrado = null;
 
-    // --- ESTRATÉGIA 1: CONFLUÊNCIA (Se houver viés definido) ---
-    if (vies) {
-        // CENÁRIO A: TENDÊNCIA FORTE (ADX > 25) -> Pullback
-        if (forcaTendencia > 25) {
-            if (vies === "CALL" && anterior.close < ema50 && atual.close > ema50) {
-                sinalEncontrado = { direcao: "CALL", estrategia: "Tendência (Pullback EMA50)", confianca: 90 };
-            }
-            if (vies === "PUT" && anterior.close > ema50 && atual.close < ema50) {
-                sinalEncontrado = { direcao: "PUT", estrategia: "Tendência (Pullback EMA50)", confianca: 90 };
-            }
+    // --- ESTRATÉGIA 1: SPIKE REVERSAL (Principal) ---
+    const rangeVela = atual.max - atual.min;
+    const isSpike = rangeVela > (atr * 2); 
+
+    if (isSpike) {
+        const corpo = Math.abs(atual.close - atual.open);
+        const pavioSuperior = atual.max - Math.max(atual.open, atual.close);
+        const pavioInferior = Math.min(atual.open, atual.close) - atual.min;
+
+        // Reversão de Baixa (PUT): Spike de Alta com pavio superior e RSI sobrecomprado
+        if (atual.close > atual.open && pavioSuperior > corpo && rsi > 65) {
+            sinalEncontrado = { direcao: "PUT", estrategia: "Spike Reversal (Venda)", confianca: 88 };
         }
-        // CENÁRIO B: LATERAL (ADX < 20) -> Spike Reversal
-        else if (forcaTendencia < 20) {
-            const rangeVela = atual.max - atual.min;
-            const isSpike = rangeVela > (atr * 2); 
-
-            if (isSpike) {
-                const corpo = Math.abs(atual.close - atual.open);
-                const pavioSuperior = atual.max - Math.max(atual.open, atual.close);
-                const pavioInferior = Math.min(atual.open, atual.close) - atual.min;
-
-                if (atual.close > atual.open && pavioSuperior > corpo && rsi > 65) {
-                    sinalEncontrado = { direcao: "PUT", estrategia: "Reversão (Spike + RSI)", confianca: 85 };
-                }
-                if (atual.close < atual.open && pavioInferior > corpo && rsi < 35) {
-                    sinalEncontrado = { direcao: "CALL", estrategia: "Reversão (Spike + RSI)", confianca: 85 };
-                }
-            }
+        // Reversão de Alta (CALL): Spike de Baixa com pavio inferior e RSI sobrevendido
+        if (atual.close < atual.open && pavioInferior > corpo && rsi < 35) {
+            sinalEncontrado = { direcao: "CALL", estrategia: "Spike Reversal (Compra)", confianca: 88 };
         }
     }
 
-    // --- ESTRATÉGIA 2: IMPULSO (Plano B - Se o mercado estiver muito parado) ---
-    // Se não achou nada e a última vela foi um "trem" (corpo > 1.5x ATR)
-    if (!sinalEncontrado) {
-        const corpoAnterior = Math.abs(anterior.close - anterior.open);
-        if (corpoAnterior > atr * 1.5) {
-            if (anterior.close > anterior.open) {
-                sinalEncontrado = { direcao: "CALL", estrategia: "Impulso (Continuação)", confianca: 80 };
-            } else {
-                sinalEncontrado = { direcao: "PUT", estrategia: "Impulso (Continuação)", confianca: 80 };
-            }
+    // --- ESTRATÉGIA 2: TENDÊNCIA (Plano B, se não houver spike) ---
+    if (!sinalEncontrado && forcaTendencia > 25) {
+        if (anterior.close < ema50 && atual.close > ema50) {
+            sinalEncontrado = { direcao: "CALL", estrategia: "Tendência (Pullback)", confianca: 85 };
+        }
+        if (anterior.close > ema50 && atual.close < ema50) {
+            sinalEncontrado = { direcao: "PUT", estrategia: "Tendência (Pullback)", confianca: 85 };
         }
     }
 
@@ -160,7 +146,7 @@ async function buscarAnaliseServidor() {
     if (!sdk || !global.buscando) return;
     isBuscando = true;
 
-    console.log(`🔎 [ROBÔ] Executando Cérebro Híbrido (Lendo 100 velas)...`);
+    console.log(`🔎 [ROBÔ] Executando Cérebro Sniper Híbrido (Lendo 100 velas)...`);
 
     try {
         const binaryOptions = await sdk.binaryOptions();
