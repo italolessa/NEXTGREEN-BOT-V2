@@ -24,7 +24,7 @@ async function iniciarBotServidor(window, tokenSsid) {
         sdk = await ClientSdk.create(WS_URL, 82, new SsidAuthMethod(tokenSsid));
         global.BinaryOptionsDirection = BinaryOptionsDirection;
 
-        console.log("✅ SDK inicializado! Cérebro Sniper Híbrido (Raio-X Ativo) rodando.");
+        console.log("✅ SDK inicializado! Cérebro Sniper Híbrido (Confirmação de Reversão) ativo.");
 
         setInterval(async () => {
             if (!isBuscando && global.buscando) {
@@ -88,61 +88,60 @@ function calcularATR(highs, lows, closes, period = 14) {
     return trs.slice(-period).reduce((a, b) => a + b, 0) / period;
 }
 
-// --- O CÉREBRO SNIPER HÍBRIDO (COM RAIO-X DE DADOS) ---
+// --- O CÉREBRO SNIPER HÍBRIDO (COM CONFIRMAÇÃO DE REVERSÃO) ---
 function analisarGraficoComEstrategias(candles, nomeAtivo) {
     const closes = candles.map(c => c.close);
     const highs = candles.map(c => c.max);
     const lows = candles.map(c => c.min);
+    
+    // Agora precisamos olhar 3 velas: a atual (confirmação), a anterior (spike) e a retrasada
     const atual = candles[candles.length - 1];
-    const anterior = candles[candles.length - 2];
-
+    const spike = candles[candles.length - 2]; 
+    
     const rsi = calcularRSI(closes, 14);
     const atr = calcularATR(highs, lows, closes, 14);
     const adxData = calcularADX(highs, lows, closes, 14);
     const ema9 = calcularEMA(closes, 9);   
     const ema50 = calcularEMA(closes, 50); 
 
-    // ==========================================
-    // LOG DE RAIO-X (A PROVA VISUAL)
-    // ==========================================
+    // RAIO-X
     console.log(`\n--- 📊 RAIO-X: ${nomeAtivo} ---`);
     console.log(`Preço Atual: ${atual.close.toFixed(5)} | ATR: ${atr.toFixed(5)} | RSI: ${rsi.toFixed(2)} | ADX: ${adxData.adx.toFixed(2)}`);
-    console.log(`EMA 9: ${ema9.toFixed(5)} | EMA 50: ${ema50.toFixed(5)}`);
-    // ==========================================
 
-    // FILTRO DE HORÁRIO (08:00 - 18:00 BRT)
+    // FILTRO DE HORÁRIO
     const horaAtual = new Date().getHours();
     if (horaAtual < 8 || horaAtual >= 18) return null; 
 
     const forcaTendencia = adxData.adx;
     let sinalEncontrado = null;
 
-    // ESTRATÉGIA 1: TENDÊNCIA FORTE (ADX > 25)
+    // ESTRATÉGIA 1: TENDÊNCIA FORTE (Pullback)
     if (forcaTendencia > 25) {
-        if (anterior.close < ema50 && atual.close > ema50 && atual.close > atual.open) {
+        if (spike.close < ema50 && atual.close > ema50 && atual.close > atual.open) {
             sinalEncontrado = { direcao: "CALL", estrategia: "Tendência (Pullback Compra)", confianca: 90 };
         }
-        if (anterior.close > ema50 && atual.close < ema50 && atual.close < atual.open) {
+        if (spike.close > ema50 && atual.close < ema50 && atual.close < atual.open) {
             sinalEncontrado = { direcao: "PUT", estrategia: "Tendência (Pullback Venda)", confianca: 90 };
         }
     }
 
-    // ESTRATÉGIA 2: SPIKE REVERSAL (Só ativa se o mercado for lateral)
+    // ESTRATÉGIA 2: SPIKE REVERSAL COM CONFIRMAÇÃO (Mercado Lateral)
     if (!sinalEncontrado && forcaTendencia < 20) {
-        const rangeVela = atual.max - atual.min;
-        const isSpike = rangeVela > (atr * 2); 
+        const rangeSpike = spike.max - spike.min;
+        const isSpike = rangeSpike > (atr * 2); 
 
         if (isSpike) {
-            const corpo = Math.abs(atual.close - atual.open);
-            const pavioSuperior = atual.max - Math.max(atual.open, atual.close);
-            const pavioInferior = Math.min(atual.open, atual.close) - atual.min;
+            const corpoSpike = Math.abs(spike.close - spike.open);
+            const pavioSuperior = spike.max - Math.max(spike.open, spike.close);
+            const pavioInferior = Math.min(spike.open, spike.close) - spike.min;
 
-            // TRAVA DE SEGURANÇA (EMA 9):
-            if (atual.close > atual.open && pavioSuperior > corpo && rsi > 65 && atual.close <= (ema9 * 1.0005)) {
-                sinalEncontrado = { direcao: "PUT", estrategia: "Spike Reversal (Venda)", confianca: 88 };
+            // PUT: Spike de Alta na vela ANTERIOR. A vela ATUAL (confirmação) tem que fechar VERMELHA.
+            if (spike.close > spike.open && pavioSuperior > corpoSpike && rsi > 65 && atual.close < atual.open && atual.close < spike.close) {
+                sinalEncontrado = { direcao: "PUT", estrategia: "Spike Reversal Confirmado (Venda)", confianca: 92 };
             }
-            if (atual.close < atual.open && pavioInferior > corpo && rsi < 35 && atual.close >= (ema9 * 0.9995)) {
-                sinalEncontrado = { direcao: "CALL", estrategia: "Spike Reversal (Compra)", confianca: 88 };
+            // CALL: Spike de Baixa na vela ANTERIOR. A vela ATUAL (confirmação) tem que fechar VERDE.
+            if (spike.close < spike.open && pavioInferior > corpoSpike && rsi < 35 && atual.close > atual.open && atual.close > spike.close) {
+                sinalEncontrado = { direcao: "CALL", estrategia: "Spike Reversal Confirmado (Compra)", confianca: 92 };
             }
         }
     }
@@ -174,7 +173,6 @@ async function buscarAnaliseServidor() {
         }
         let melhoresSinais = [];
 
-        // Para não floodar o log, vamos analisar apenas os primeiros 5 ativos do lote para o Raio-X
         for (let i = 0; i < ativosFiltrados.length; i += 5) {
             if (!global.buscando) break;
             const lote = ativosFiltrados.slice(i, i + 5);
@@ -187,7 +185,6 @@ async function buscarAnaliseServidor() {
 
                 if (!candles || candles.length < 50) return null;
 
-                // Passando o nome do ativo para a função de análise
                 const resultado = analisarGraficoComEstrategias(candles, ativo.ticker);
 
                 if (resultado) {
