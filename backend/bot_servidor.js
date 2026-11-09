@@ -34,17 +34,17 @@ async function iniciarBotServidor(window, tokenSsid) {
         sdk = await ClientSdk.create(WS_URL, 82, new SsidAuthMethod(tokenSsid));
         global.BinaryOptionsDirection = BinaryOptionsDirection;
 
-        console.log("✅ SDK inicializado! Cérebro Supremo (Filtro Anti-Ações) ativo.");
+        console.log("✅ SDK inicializado! Cérebro Rápido (Filtro Anti-Ações) ativo.");
 
         setInterval(async () => {
             if (!isBuscando && global.buscando) {
                 await buscarAnaliseServidor();
             }
-        }, 10000);
+        }, 5000); // Busca a cada 5 segundos
 
         setInterval(async () => {
             await verificarResultados();
-        }, 10000);
+        }, 10000); // Avalia a cada 10 segundos
 
     } catch (error) {
         console.error("❌ Erro ao conectar no servidor:", error.message);
@@ -93,30 +93,8 @@ function calcularADX(highs, lows, closes, period = 14) {
     return { adx: dx };
 }
 
-function converterParaHeikinAshi(candles) {
-    let haCandles = [];
-    for (let i = 0; i < candles.length; i++) {
-        const close = (candles[i].open + candles[i].max + candles[i].min + candles[i].close) / 4;
-        let open;
-        if (i === 0) {
-            open = (candles[i].open + candles[i].close) / 2;
-        } else {
-            open = (haCandles[i - 1].open + haCandles[i - 1].close) / 2;
-        }
-        haCandles.push({
-            open: open,
-            close: close,
-            max: Math.max(candles[i].max, open, close),
-            min: Math.min(candles[i].min, open, close)
-        });
-    }
-    return haCandles;
-}
-
-
-// --- O CÉREBRO SUPREMO (MÚLTIPLOS MOTORES) ---
+// --- O CÉREBRO RÁPIDO (CONFLUÊNCIA SIMPLIFICADA) ---
 function analisarGraficoComEstrategias(candles) {
-    // --- MOTOR 1: TENDÊNCIA (Emas + RSI) ---
     const closes = candles.map(c => c.close);
     const rsi = calcularRSI(closes);
     const ema9 = calcularEMA(closes, 9);
@@ -124,7 +102,7 @@ function analisarGraficoComEstrategias(candles) {
     const atual = candles[candles.length - 1];
     const anterior = candles[candles.length - 2];
 
-    // Sinal de tendência: Emas cruzadas e RSI confirma
+    // MOTOR 1: TENDÊNCIA (Pullback Simples)
     if (ema9 > ema21 && anterior.close < anterior.open && atual.close > atual.open && rsi > 50) {
         return { direcao: "CALL", estrategia: "Tendência (EMA+RSI)", confianca: 92 };
     }
@@ -132,15 +110,14 @@ function analisarGraficoComEstrategias(candles) {
         return { direcao: "PUT", estrategia: "Tendência (EMA+RSI)", confianca: 92 };
     }
 
-    // --- MOTOR 2: CONSOLIDAÇÃO (Bollinger + ADX) ---
+    // MOTOR 2: CONSOLIDAÇÃO (Bollinger + ADX)
     const adxData = calcularADX(candles.map(c=>c.max), candles.map(c=>c.min), closes);
-    if (adxData.adx < 20) { // Se o mercado está lateral
+    if (adxData.adx < 20) { 
         const sma20 = closes.slice(-20).reduce((a, b) => a + b, 0) / 20;
         const desvioPadrao = Math.sqrt(closes.slice(-20).reduce((acc, val) => acc + Math.pow(val - sma20, 2), 0) / 20);
         const bandaSuperior = sma20 + (desvioPadrao * 2);
         const bandaInferior = sma20 - (desvioPadrao * 2);
 
-        // Reversão na banda
         if (atual.max > bandaSuperior && atual.close < bandaSuperior) {
             return { direcao: "PUT", estrategia: "Consolidação (Bollinger)", confianca: 88 };
         }
@@ -149,19 +126,12 @@ function analisarGraficoComEstrategias(candles) {
         }
     }
 
-    // --- MOTOR 3: HEIKIN ASHI (Tendência Forte) ---
-    const haCandles = converterParaHeikinAshi(candles);
-    const haAtual = haCandles[haCandles.length - 1];
-    const haAnterior = haCandles[haCandles.length - 2];
-    const haAnterior2 = haCandles[haCandles.length - 3];
-
-    // 3 velas HA verdes + RSI forte
-    if (haAtual.close > haAtual.open && haAnterior.close > haAnterior.open && haAnterior2.close > haAnterior2.open && rsi > 60) {
-         return { direcao: "CALL", estrategia: "Heikin Ashi (Tendência)", confianca: 95 };
+    // MOTOR 3: REVERSÃO RÁPIDA (RSI Extremo)
+    if (rsi < 30 && atual.close > atual.open) {
+         return { direcao: "CALL", estrategia: "Reversão Rápida (RSI)", confianca: 85 };
     }
-    // 3 velas HA vermelhas + RSI fraco
-    if (haAtual.close < haAtual.open && haAnterior.close < haAnterior.open && haAnterior2.close < haAnterior2.open && rsi < 40) {
-         return { direcao: "PUT", estrategia: "Heikin Ashi (Tendência)", confianca: 95 };
+    if (rsi > 70 && atual.close < atual.open) {
+         return { direcao: "PUT", estrategia: "Reversão Rápida (RSI)", confianca: 85 };
     }
     
     return null;
@@ -181,7 +151,6 @@ async function buscarAnaliseServidor() {
             const estaAberto = a.canBeBoughtAt(now);
             const jaFoiMostrado = ativosIgnoradosLista.includes(a.ticker);
             
-            // FILTRO ANTI-AÇÕES E ÍNDICES
             let ehProibido = false;
             for (let palavra of ACOES_E_INDICES_PROIBIDOS) {
                 if (a.ticker.toUpperCase().includes(palavra)) {
@@ -207,17 +176,18 @@ async function buscarAnaliseServidor() {
         
         let melhoresSinais = [];
 
-        for (let i = 0; i < ativosFiltrados.length; i += 5) {
+        // OTIMIZAÇÃO: Lotes de 10 em 10 e apenas 30 velas
+        for (let i = 0; i < ativosFiltrados.length; i += 10) {
             if (!global.buscando) break;
-            const lote = ativosFiltrados.slice(i, i + 5);
+            const lote = ativosFiltrados.slice(i, i + 10);
 
             const res = await Promise.all(lote.map(async (ativo) => {
                 const seconds = configSolicitada.timeframe === 'M5' ? 300 : 60;
                 const layer = await sdk.realTimeChartDataLayer(ativo.id, seconds);
-                const count = 50; // Otimização: lendo 50 velas
+                const count = 30; 
                 const candles = await layer.fetchAllCandles(Math.floor(Date.now() / 1000) - (count * seconds));
 
-                if (!candles || candles.length < 30) return null;
+                if (!candles || candles.length < 20) return null;
 
                 const resultado = analisarGraficoComEstrategias(candles);
 
