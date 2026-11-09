@@ -1,15 +1,45 @@
-// COLOQUE A URL DO SEU RENDER AQUI (sem barra no final)
-const RENDER_URL = 'https://nextgreen-bot-v2.onrender.com';
-
+const RENDER_URL = 'https://nextgreen-bot-v2.onrender.com'; // COLOQUE A SUA URL AQUI
 let configAtual = { timeframe: 'M1', mercado: 'OTC' };
 let sinalAtual = null;
 let historicoLocal = [];
 let ultimoAtivoEnviado = null; 
 
+// --- FUNÇÃO DE ALARME SONORO NATIVO ---
+function tocarAlarme() {
+    try {
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        
+        // Primeiro Bipe
+        const osc1 = audioCtx.createOscillator();
+        const gain1 = audioCtx.createGain();
+        osc1.type = 'square'; // Som mais agudo e chamativo
+        osc1.frequency.value = 880;
+        gain1.gain.setValueAtTime(0.5, audioCtx.currentTime);
+        osc1.connect(gain1);
+        gain1.connect(audioCtx.destination);
+        osc1.start();
+        osc1.stop(audioCtx.currentTime + 0.2);
+
+        // Segundo Bipe (300ms depois)
+        setTimeout(() => {
+            const osc2 = audioCtx.createOscillator();
+            const gain2 = audioCtx.createGain();
+            osc2.type = 'square';
+            osc2.frequency.value = 1100;
+            gain2.gain.setValueAtTime(0.5, audioCtx.currentTime);
+            osc2.connect(gain2);
+            gain2.connect(audioCtx.destination);
+            osc2.start();
+            osc2.stop(audioCtx.currentTime + 0.3);
+        }, 300);
+    } catch (e) {
+        console.log("Áudio bloqueado pelo navegador.");
+    }
+}
+
 // Função de selecionar as tabelas (M1/M5 e OTC/Aberto)
 function setConfig(key, valor) {
     configAtual[key] = valor;
-
     if (key === 'timeframe') {
         document.getElementById('btn-m1').classList.remove('active');
         document.getElementById('btn-m5').classList.remove('active');
@@ -26,12 +56,10 @@ function solicitarBusca() {
     document.getElementById('msg-inicial').style.display = 'none';
     document.getElementById('area-sinal').style.display = 'none';
     document.getElementById('loader').style.display = 'block';
-
-    document.getElementById('btn-buscar').innerText = "⏳ Lendo Polarium...";
+    document.getElementById('btn-buscar').innerText = "⏳ Analisando...";
     document.getElementById('btn-buscar').disabled = true;
     document.getElementById('btn-parar').style.display = 'block';
 
-    // A MÁGICA: Envia a configuração E o último ativo para o servidor ignorar
     window.api.configurarBusca({
         timeframe: configAtual.timeframe,
         mercado: configAtual.mercado,
@@ -41,13 +69,10 @@ function solicitarBusca() {
 
 // Botão: PARAR
 function pararBusca() {
-    // Avisa o servidor para parar
     window.api.pararBusca();
-
     document.getElementById('loader').style.display = 'none';
     document.getElementById('msg-inicial').style.display = 'block';
     document.getElementById('msg-inicial').innerText = "Busca cancelada no aplicativo. Aguardando nova ação.";
-
     document.getElementById('btn-buscar').innerText = "🔍 Buscar Ativo";
     document.getElementById('btn-buscar').disabled = false;
     document.getElementById('btn-parar').style.display = 'none';
@@ -56,19 +81,16 @@ function pararBusca() {
 // Botão: RESETAR FILTROS
 function resetarFiltros() {
     if(confirm("Deseja resetar os filtros e limpar o histórico da tela?")) {
-        // Avisa o servidor no Render para desligar o radar e limpar a memória
         window.api.resetarFiltros();
-
-        // Reseta as variáveis locais
+        
         configAtual = { timeframe: 'M1', mercado: 'OTC' };
         setConfig('timeframe', 'M1');
         setConfig('mercado', 'OTC');
         
-        ultimoAtivoEnviado = null; // A MÁGICA: Esquece o último ativo
+        ultimoAtivoEnviado = null;
         historicoLocal = [];
         sinalAtual = null;
-
-        // Reseta a interface visual
+        
         document.getElementById('area-sinal').style.display = 'none';
         document.getElementById('loader').style.display = 'none';
         document.getElementById('msg-inicial').style.display = 'block';
@@ -84,31 +106,27 @@ function resetarFiltros() {
 
 // Recebe o sinal da nuvem e atualiza a tela
 window.api.onNovoSinal((dados) => {
-    // Trava para não repetir o mesmo ativo na tela
     if (ultimoAtivoEnviado && ultimoAtivoEnviado === dados.ativo) {
-        console.log(`⏳ App ignorou sinal repetido da nuvem: ${dados.ativo}`);
         return; 
     }
+    
+    // TOCA O ALARME
+    tocarAlarme();
 
     sinalAtual = dados;
-    ultimoAtivoEnviado = dados.ativo; // Salva na memória qual ativo está na tela
-
-    // Esconde o loader e mostra o card de resultado
+    ultimoAtivoEnviado = dados.ativo; 
+    
     document.getElementById('loader').style.display = 'none';
     document.getElementById('area-sinal').style.display = 'block';
-
-    // Reseta os botões
     document.getElementById('btn-buscar').innerText = "🔍 Buscar Ativo";
     document.getElementById('btn-buscar').disabled = false;
     document.getElementById('btn-parar').style.display = 'none';
 
-    // Preenche os dados na tela
     document.getElementById('res-ativo').innerText = dados.ativo;
     document.getElementById('res-tf').innerText = `${dados.timeframe} (${dados.estrategia})`;
     document.getElementById('res-conf').innerText = `${dados.confianca}%`;
     document.getElementById('res-hora').innerText = `⏰ ${dados.horario} (BRT)`;
 
-    // Muda a cor e o texto dependendo da direção (CALL/PUT)
     const box = document.getElementById('box-direcao');
     if (dados.direcao === "PUT" || dados.direcao === "VENDA") {
         box.className = 'sinal-box venda';
@@ -118,10 +136,9 @@ window.api.onNovoSinal((dados) => {
         box.innerHTML = '📈 COMPRA';
     }
 
-    // Adiciona ao histórico (evitando duplicar o mesmo id na lista)
     if (historicoLocal.length === 0 || historicoLocal[0].id !== dados.id) {
         historicoLocal.unshift(dados);
-        if (historicoLocal.length > 20) historicoLocal.pop(); // Mantém os últimos 20
+        if (historicoLocal.length > 20) historicoLocal.pop(); 
         atualizarHistorico();
     }
 });
@@ -129,12 +146,10 @@ window.api.onNovoSinal((dados) => {
 // Atualiza a tabela visual do histórico
 function atualizarHistorico() {
     const container = document.getElementById('lista-historico');
-
     if (historicoLocal.length === 0) {
         container.innerHTML = '<div style="color: #666; text-align: center; padding: 10px;">Nenhum sinal recebido ainda...</div>';
         return;
     }
-    
     container.innerHTML = historicoLocal.map(item => `
         <div class="historico-item">
             <span class="historico-ativo">${item.ativo}</span>
@@ -149,8 +164,6 @@ function atualizarHistorico() {
 function enviarParaCorretora() {
     if (sinalAtual) {
         alert(`✅ Ordem Confirmada!\n\nAtivo: ${sinalAtual.ativo}\nDireção: ${sinalAtual.direcao}\nENTRAR EXATAMENTE ÀS: ${sinalAtual.horario} (BRT)`);
-        
-        // Limpa a tela após o envio
         document.getElementById('area-sinal').style.display = 'none';
         document.getElementById('msg-inicial').style.display = 'block';
         document.getElementById('msg-inicial').innerText = "Siga para a Polarium no horário exato!";

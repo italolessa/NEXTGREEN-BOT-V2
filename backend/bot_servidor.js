@@ -4,6 +4,7 @@ let isBuscando = false;
 let ultimoAtivoEnviado = null;
 let configSolicitada = { timeframe: 'M1', mercado: 'OTC' };
 let ativosIgnoradosLista = [];
+let sinaisParaAvaliar = []; // Memória para conferir os Win/Loss
 
 global.definirConfiguracao = (config) => {
     configSolicitada = config;
@@ -24,13 +25,20 @@ async function iniciarBotServidor(window, tokenSsid) {
         sdk = await ClientSdk.create(WS_URL, 82, new SsidAuthMethod(tokenSsid));
         global.BinaryOptionsDirection = BinaryOptionsDirection;
 
-        console.log("✅ SDK inicializado! Cérebro Sniper (com Trava de Tempo) ativo.");
+        console.log("✅ SDK inicializado! Cérebro Sniper com Auto-Avaliação ativo.");
 
+        // Loop de busca de sinais
         setInterval(async () => {
             if (!isBuscando && global.buscando) {
                 await buscarAnaliseServidor();
             }
         }, 15000);
+
+        // Loop de checagem de resultados (Roda a cada 10 segundos)
+        setInterval(async () => {
+            await verificarResultados();
+        }, 10000);
+
     } catch (error) {
         console.error("❌ Erro ao conectar no servidor:", error.message);
     }
@@ -44,7 +52,6 @@ function calcularEMA(dados, period) {
     for (let i = period; i < dados.length; i++) ema = dados[i] * k + ema * (1 - k);
     return ema;
 }
-
 function calcularRSI(closes, period = 14) {
     if (closes.length < period) return 50;
     let gains = 0, losses = 0;
@@ -52,20 +59,17 @@ function calcularRSI(closes, period = 14) {
         const diff = closes[i] - closes[i - 1];
         if (diff >= 0) gains += diff; else losses -= diff;
     }
-    let avgGain = gains / period;
-    let avgLoss = losses / period;
+    let avgGain = gains / period; let avgLoss = losses / period;
     if (avgLoss === 0) return 100;
     return 100 - (100 / (1 + (avgGain / avgLoss)));
 }
-
 function calcularADX(highs, lows, closes, period = 14) {
     if (closes.length < period) return { adx: 0, plusDI: 0, minusDI: 0 };
     let trs = [], plusDMs = [], minusDMs = [];
     for (let i = 1; i < closes.length; i++) {
         const tr = Math.max(highs[i] - lows[i], Math.abs(highs[i] - closes[i - 1]), Math.abs(lows[i] - closes[i - 1]));
         trs.push(tr);
-        const upMove = highs[i] - highs[i - 1];
-        const downMove = lows[i - 1] - lows[i];
+        const upMove = highs[i] - highs[i - 1]; const downMove = lows[i - 1] - lows[i];
         plusDMs.push(upMove > downMove && upMove > 0 ? upMove : 0);
         minusDMs.push(downMove > upMove && downMove > 0 ? downMove : 0);
     }
@@ -77,7 +81,6 @@ function calcularADX(highs, lows, closes, period = 14) {
     const dx = (plusDI + minusDI) === 0 ? 0 : Math.abs(plusDI - minusDI) / (plusDI + minusDI) * 100;
     return { adx: dx, plusDI, minusDI };
 }
-
 function calcularATR(highs, lows, closes, period = 14) {
     if (closes.length < period + 1) return 0;
     let trs = [];
@@ -93,28 +96,20 @@ function analisarGraficoComEstrategias(candles, nomeAtivo) {
     const closes = candles.map(c => c.close);
     const highs = candles.map(c => c.max);
     const lows = candles.map(c => c.min);
-    
     const atual = candles[candles.length - 1];
     const spike = candles[candles.length - 2]; 
     
     const rsi = calcularRSI(closes, 14);
     const atr = calcularATR(highs, lows, closes, 14);
     const adxData = calcularADX(highs, lows, closes, 14);
-    const ema9 = calcularEMA(closes, 9);   
     const ema50 = calcularEMA(closes, 50); 
 
-    // RAIO-X
-    console.log(`\n--- 📊 RAIO-X: ${nomeAtivo} ---`);
-    console.log(`Preço Atual: ${atual.close.toFixed(5)} | ATR: ${atr.toFixed(5)} | RSI: ${rsi.toFixed(2)} | ADX: ${adxData.adx.toFixed(2)}`);
-
-    // FILTRO DE HORÁRIO
     const horaAtual = new Date().getHours();
     if (horaAtual < 8 || horaAtual >= 18) return null; 
 
     const forcaTendencia = adxData.adx;
     let sinalEncontrado = null;
 
-    // ESTRATÉGIA 1: TENDÊNCIA FORTE (Pullback)
     if (forcaTendencia > 25) {
         if (spike.close < ema50 && atual.close > ema50 && atual.close > atual.open) {
             sinalEncontrado = { direcao: "CALL", estrategia: "Tendência (Pullback Compra)", confianca: 90 };
@@ -124,35 +119,28 @@ function analisarGraficoComEstrategias(candles, nomeAtivo) {
         }
     }
 
-    // ESTRATÉGIA 2: SPIKE REVERSAL COM CONFIRMAÇÃO (Mercado Lateral)
     if (!sinalEncontrado && forcaTendencia < 20) {
         const rangeSpike = spike.max - spike.min;
         const isSpike = rangeSpike > (atr * 2); 
-
         if (isSpike) {
             const corpoSpike = Math.abs(spike.close - spike.open);
             const pavioSuperior = spike.max - Math.max(spike.open, spike.close);
             const pavioInferior = Math.min(spike.open, spike.close) - spike.min;
 
-            // PUT Confirmado
             if (spike.close > spike.open && pavioSuperior > corpoSpike && rsi > 65 && atual.close < atual.open && atual.close < spike.close) {
-                sinalEncontrado = { direcao: "PUT", estrategia: "Spike Reversal Confirmado (Venda)", confianca: 92 };
+                sinalEncontrado = { direcao: "PUT", estrategia: "Spike Reversal (Venda)", confianca: 92 };
             }
-            // CALL Confirmado
             if (spike.close < spike.open && pavioInferior > corpoSpike && rsi < 35 && atual.close > atual.open && atual.close > spike.close) {
-                sinalEncontrado = { direcao: "CALL", estrategia: "Spike Reversal Confirmado (Compra)", confianca: 92 };
+                sinalEncontrado = { direcao: "CALL", estrategia: "Spike Reversal (Compra)", confianca: 92 };
             }
         }
     }
-
     return sinalEncontrado;
 }
 
 async function buscarAnaliseServidor() {
     if (!sdk || !global.buscando) return;
     isBuscando = true;
-
-    console.log(`\n🔎 [ROBÔ] Iniciando varredura com Raio-X...`);
 
     try {
         const binaryOptions = await sdk.binaryOptions();
@@ -197,7 +185,8 @@ async function buscarAnaliseServidor() {
                         estrategia: resultado.estrategia,
                         mercado: configSolicitada.mercado,
                         horario: getHoraProximaVela(),
-                        id: Date.now()
+                        id: Date.now(),
+                        status: "PENDENTE" // Novo campo
                     };
                 }
                 return null;
@@ -209,27 +198,71 @@ async function buscarAnaliseServidor() {
             melhoresSinais.sort((a, b) => b.confianca - a.confianca);
             const campeao = melhoresSinais[0];
             
-            // --- TRAVA DE SEGURANÇA DE TEMPO ---
             const agora = new Date();
             const segundosRestantes = 60 - agora.getSeconds();
             
-            if (segundosRestantes < 15) {
-                console.log(`⏳ [AGUARDANDO] Sinal no ${campeao.ativo} detectado, mas faltam ${segundosRestantes}s para virar a vela. Segurando para o próximo ciclo.`);
-                // Não envia o sinal agora, espera o loop de 15 segundos rodar de novo
-            } else {
+            if (segundosRestantes >= 15) {
                 ativosIgnoradosLista.push(campeao.tickerReal);
                 ultimoAtivoEnviado = campeao.tickerReal;
-
-                console.log(`\n🏆 [SINAL] ${campeao.ativo} | ${campeao.direcao} | ${campeao.estrategia} (Confiança: ${campeao.confianca}%)`);
+                console.log(`\n🏆 [SINAL] ${campeao.ativo} | ${campeao.direcao} | ${campeao.estrategia} | Entrada: ${campeao.horario}`);
+                
+                sinaisParaAvaliar.push(campeao); // Salva para conferir depois
+                
                 if (global.adicionarSinal) global.adicionarSinal(campeao);
             }
-        } else if (global.buscando) {
-            console.log(`\n⚠️ Nenhum setup encontrado. Retentando...`);
         }
     } catch (error) {
-        console.error("❌ Erro na varredura:", error.message);
+        // Erro silencioso
     } finally {
         isBuscando = false;
+    }
+}
+
+// --- FUNÇÃO DE AUTO-AVALIAÇÃO ---
+async function verificarResultados() {
+    if (!sdk || sinaisParaAvaliar.length === 0) return;
+    
+    const agora = new Date();
+    const segundosAgora = agora.getSeconds();
+    
+    // Roda apenas nos primeiros 10 segundos de cada minuto
+    if (segundosAgora > 10) return; 
+
+    const sinaisParaRemover = [];
+
+    for (let i = 0; i < sinaisParaAvaliar.length; i++) {
+        const sinal = sinaisParaAvaliar[i];
+        
+        try {
+            const seconds = sinal.timeframe === 'M5' ? 300 : 60;
+            const layer = await sdk.realTimeChartDataLayer(sinal.tickerReal, seconds);
+            const candles = await layer.fetchAllCandles(Math.floor(Date.now() / 1000) - (5 * seconds));
+
+            if (candles && candles.length >= 2) {
+                const velaFechada = candles[candles.length - 2];
+                
+                let result = "EMPATE";
+                if (sinal.direcao === "CALL" || sinal.direcao === "COMPRA") {
+                    if (velaFechada.close > velaFechada.open) result = "WIN";
+                    else if (velaFechada.close < velaFechada.open) result = "LOSS";
+                } else if (sinal.direcao === "PUT" || sinal.direcao === "VENDA") {
+                    if (velaFechada.close < velaFechada.open) result = "WIN";
+                    else if (velaFechada.close > velaFechada.open) result = "LOSS";
+                }
+
+                sinal.status = result;
+                console.log(`📊 [RESULTADO] ${sinal.ativo} | ${sinal.direcao} | ${result}`);
+                
+                if (global.adicionarSinal) global.adicionarSinal(sinal);
+                sinaisParaRemover.push(i);
+            }
+        } catch (e) {
+            sinaisParaRemover.push(i);
+        }
+    }
+
+    for (let i = sinaisParaRemover.length - 1; i >= 0; i--) {
+        sinaisParaAvaliar.splice(sinaisParaRemover[i], 1);
     }
 }
 
