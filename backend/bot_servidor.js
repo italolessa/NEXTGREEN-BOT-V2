@@ -6,7 +6,7 @@ let configSolicitada = { timeframe: 'M1', mercado: 'OTC' };
 let ativosIgnoradosLista = [];
 let sinaisParaAvaliar = [];
 
-// LISTA NEGRA: Ações, Índices e Empresas que NÃO queremos operar
+// LISTA NEGRA: Ações e Índices
 const ACOES_E_INDICES_PROIBIDOS = [
     'AAPL', 'APPLE', 'MSFT', 'MICROSOFT', 'TSLA', 'TESLA', 'AMZN', 'AMAZON', 
     'GOOGL', 'GOOGLE', 'META', 'FACEBOOK', 'NFLX', 'NETFLIX', 'NVDA', 'NVIDIA', 
@@ -34,17 +34,17 @@ async function iniciarBotServidor(window, tokenSsid) {
         sdk = await ClientSdk.create(WS_URL, 82, new SsidAuthMethod(tokenSsid));
         global.BinaryOptionsDirection = BinaryOptionsDirection;
 
-        console.log("✅ SDK inicializado! Cérebro Rápido (Filtro Anti-Ações) ativo.");
+        console.log("✅ SDK inicializado! Cérebro Simples (RSI + Pavio) ativo.");
 
         setInterval(async () => {
             if (!isBuscando && global.buscando) {
                 await buscarAnaliseServidor();
             }
-        }, 5000); // Busca a cada 5 segundos
+        }, 5000); 
 
         setInterval(async () => {
             await verificarResultados();
-        }, 10000); // Avalia a cada 10 segundos
+        }, 10000); 
 
     } catch (error) {
         console.error("❌ Erro ao conectar no servidor:", error.message);
@@ -52,14 +52,6 @@ async function iniciarBotServidor(window, tokenSsid) {
 }
 
 // --- MATEMÁTICA DOS INDICADORES ---
-function calcularEMA(dados, period) {
-    if (dados.length < period) return dados[dados.length - 1];
-    const k = 2 / (period + 1);
-    let ema = dados.slice(0, period).reduce((a, b) => a + b, 0) / period;
-    for (let i = period; i < dados.length; i++) ema = dados[i] * k + ema * (1 - k);
-    return ema;
-}
-
 function calcularRSI(closes, period = 14) {
     if (closes.length < period) return 50;
     let gains = 0, losses = 0;
@@ -73,65 +65,35 @@ function calcularRSI(closes, period = 14) {
     return 100 - (100 / (1 + (avgGain / avgLoss)));
 }
 
-function calcularADX(highs, lows, closes, period = 14) {
-    if (closes.length < period) return { adx: 0 };
-    let trs = [], plusDMs = [], minusDMs = [];
-    for (let i = 1; i < closes.length; i++) {
-        const tr = Math.max(highs[i] - lows[i], Math.abs(highs[i] - closes[i - 1]), Math.abs(lows[i] - closes[i - 1]));
-        trs.push(tr);
-        const upMove = highs[i] - highs[i - 1];
-        const downMove = lows[i - 1] - lows[i];
-        plusDMs.push(upMove > downMove && upMove > 0 ? upMove : 0);
-        minusDMs.push(downMove > upMove && downMove > 0 ? downMove : 0);
-    }
-    const avgTR = trs.slice(-period).reduce((a, b) => a + b, 0) / period;
-    const avgPlusDM = plusDMs.slice(-period).reduce((a, b) => a + b, 0) / period;
-    const avgMinusDM = minusDMs.slice(-period).reduce((a, b) => a + b, 0) / period;
-    const plusDI = avgTR === 0 ? 0 : (avgPlusDM / avgTR) * 100;
-    const minusDI = avgTR === 0 ? 0 : (avgMinusDM / avgTR) * 100;
-    const dx = (plusDI + minusDI) === 0 ? 0 : Math.abs(plusDI - minusDI) / (plusDI + minusDI) * 100;
-    return { adx: dx };
-}
-
-// --- O CÉREBRO RÁPIDO (CONFLUÊNCIA SIMPLIFICADA) ---
+// --- O CÉREBRO SIMPLES (RSI + PAVIO DE REJEIÇÃO) ---
 function analisarGraficoComEstrategias(candles) {
     const closes = candles.map(c => c.close);
     const rsi = calcularRSI(closes);
-    const ema9 = calcularEMA(closes, 9);
-    const ema21 = calcularEMA(closes, 21);
+    
     const atual = candles[candles.length - 1];
     const anterior = candles[candles.length - 2];
 
-    // MOTOR 1: TENDÊNCIA (Pullback Simples)
-    if (ema9 > ema21 && anterior.close < anterior.open && atual.close > atual.open && rsi > 50) {
-        return { direcao: "CALL", estrategia: "Tendência (EMA+RSI)", confianca: 92 };
-    }
-    if (ema9 < ema21 && anterior.close > anterior.open && atual.close < atual.open && rsi < 50) {
-        return { direcao: "PUT", estrategia: "Tendência (EMA+RSI)", confianca: 92 };
+    // Cálculo do corpo e dos pavios da vela atual
+    const corpo = Math.abs(atual.close - atual.open);
+    const pavioSuperior = atual.max - Math.max(atual.open, atual.close);
+    const pavioInferior = Math.min(atual.open, atual.close) - atual.min;
+
+    // SINAL DE COMPRA (CALL): RSI sobrevendido + Pavio inferior grande (rejeição de queda)
+    if (rsi < 35 && pavioInferior > corpo * 1.5) {
+        return { 
+            direcao: "CALL", 
+            estrategia: "Reversão (RSI + Pavio)", 
+            confianca: 90 
+        };
     }
 
-    // MOTOR 2: CONSOLIDAÇÃO (Bollinger + ADX)
-    const adxData = calcularADX(candles.map(c=>c.max), candles.map(c=>c.min), closes);
-    if (adxData.adx < 20) { 
-        const sma20 = closes.slice(-20).reduce((a, b) => a + b, 0) / 20;
-        const desvioPadrao = Math.sqrt(closes.slice(-20).reduce((acc, val) => acc + Math.pow(val - sma20, 2), 0) / 20);
-        const bandaSuperior = sma20 + (desvioPadrao * 2);
-        const bandaInferior = sma20 - (desvioPadrao * 2);
-
-        if (atual.max > bandaSuperior && atual.close < bandaSuperior) {
-            return { direcao: "PUT", estrategia: "Consolidação (Bollinger)", confianca: 88 };
-        }
-        if (atual.min < bandaInferior && atual.close > bandaInferior) {
-            return { direcao: "CALL", estrategia: "Consolidação (Bollinger)", confianca: 88 };
-        }
-    }
-
-    // MOTOR 3: REVERSÃO RÁPIDA (RSI Extremo)
-    if (rsi < 30 && atual.close > atual.open) {
-         return { direcao: "CALL", estrategia: "Reversão Rápida (RSI)", confianca: 85 };
-    }
-    if (rsi > 70 && atual.close < atual.open) {
-         return { direcao: "PUT", estrategia: "Reversão Rápida (RSI)", confianca: 85 };
+    // SINAL DE VENDA (PUT): RSI sobrecomprado + Pavio superior grande (rejeição de alta)
+    if (rsi > 65 && pavioSuperior > corpo * 1.5) {
+        return { 
+            direcao: "PUT", 
+            estrategia: "Reversão (RSI + Pavio)", 
+            confianca: 90 
+        };
     }
     
     return null;
@@ -176,7 +138,7 @@ async function buscarAnaliseServidor() {
         
         let melhoresSinais = [];
 
-        // OTIMIZAÇÃO: Lotes de 10 em 10 e apenas 30 velas
+        // Lotes de 10 em 10 e apenas 30 velas para ser rápido
         for (let i = 0; i < ativosFiltrados.length; i += 10) {
             if (!global.buscando) break;
             const lote = ativosFiltrados.slice(i, i + 10);
