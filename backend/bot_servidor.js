@@ -6,6 +6,13 @@ let configSolicitada = { timeframe: 'M1', mercado: 'OTC' };
 let ativosIgnoradosLista = [];
 let sinaisParaAvaliar = [];
 
+// LISTA DE PALAVRAS PROIBIDAS (Ações e Empresas)
+const ACOES_PROIBIDAS = [
+    'TESLA', 'FORD', 'OPENAI', 'SPACEX', 'ANTHROPIC', 'APPLE', 'MICROSOFT', 
+    'AMAZON', 'GOOGLE', 'META', 'NETFLIX', 'NVIDIA', 'INTEL', 'IBM', 
+    'COCA', 'PEPSI', 'MCDONALD', 'BOEING', 'PFIZER', 'JOHNSON'
+];
+
 global.definirConfiguracao = (config) => {
     configSolicitada = config;
     console.log(`🤖 Cérebro atualizado: Foco em ${config.timeframe} | Mercado ${config.mercado}`);
@@ -25,7 +32,7 @@ async function iniciarBotServidor(window, tokenSsid) {
         sdk = await ClientSdk.create(WS_URL, 82, new SsidAuthMethod(tokenSsid));
         global.BinaryOptionsDirection = BinaryOptionsDirection;
 
-        console.log("✅ SDK inicializado! Modo Turbo ativado.");
+        console.log("✅ SDK inicializado! Modo Turbo ativado (Apenas Moedas/Criptos).");
 
         // Busca a cada 10 segundos (mais rápido)
         setInterval(async () => {
@@ -91,7 +98,6 @@ function analisarGraficoComEstrategias(candles) {
     let sinalEncontrado = null;
 
     // ESTRATÉGIA 1: TENDÊNCIA (Sem filtro de ADX, mais fácil de achar)
-    // Se o preço está acima da EMA50 e a vela anterior foi de queda, mas a atual subiu, é CALL.
     if (spike.close < ema50 && atual.close > ema50 && atual.close > atual.open) {
         sinalEncontrado = { direcao: "CALL", estrategia: "Tendência (Pullback Compra)", confianca: 90 };
     }
@@ -107,11 +113,9 @@ function analisarGraficoComEstrategias(candles) {
             const pavioSup = spike.max - Math.max(spike.open, spike.close);
             const pavioInf = Math.min(spike.open, spike.close) - spike.min;
 
-            // Put: Spike de alta com pavio superior
             if (spike.close > spike.open && pavioSup > corpo && atual.close < atual.open && rsi > 60) {
                 sinalEncontrado = { direcao: "PUT", estrategia: "Spike Reversal (Venda)", confianca: 85 };
             }
-            // Call: Spike de baixa com pavio inferior
             if (spike.close < spike.open && pavioInf > corpo && atual.close > atual.open && rsi < 40) {
                 sinalEncontrado = { direcao: "CALL", estrategia: "Spike Reversal (Compra)", confianca: 85 };
             }
@@ -133,13 +137,32 @@ async function buscarAnaliseServidor() {
             const mercadoOk = configSolicitada.mercado === 'OTC' ? a.ticker.includes('-OTC') : !a.ticker.includes('-OTC');
             const estaAberto = a.canBeBoughtAt(now);
             const jaFoiMostrado = ativosIgnoradosLista.includes(a.ticker);
-            return mercadoOk && estaAberto && !jaFoiMostrado;
+            
+            // FILTRO ANTI-AÇÕES: Verifica se o nome do ativo tem alguma palavra proibida
+            let ehAcao = false;
+            for (let palavra of ACOES_PROIBIDAS) {
+                if (a.ticker.toUpperCase().includes(palavra)) {
+                    ehAcao = true;
+                    break;
+                }
+            }
+
+            // Só retorna true (permite a análise) se NÃO for ação
+            return mercadoOk && estaAberto && !jaFoiMostrado && !ehAcao;
         });
 
         if (ativosFiltrados.length === 0) {
             ativosIgnoradosLista = [];
-            ativosFiltrados = actives.filter(a => (configSolicitada.mercado === 'OTC' ? a.ticker.includes('-OTC') : !a.ticker.includes('-OTC')) && a.canBeBoughtAt(now));
+            ativosFiltrados = actives.filter(a => {
+                const mercadoOk = configSolicitada.mercado === 'OTC' ? a.ticker.includes('-OTC') : !a.ticker.includes('-OTC');
+                let ehAcao = false;
+                for (let palavra of ACOES_PROIBIDAS) {
+                    if (a.ticker.toUpperCase().includes(palavra)) { ehAcao = true; break; }
+                }
+                return mercadoOk && a.canBeBoughtAt(now) && !ehAcao;
+            });
         }
+        
         let melhoresSinais = [];
 
         for (let i = 0; i < ativosFiltrados.length; i += 5) {
@@ -180,7 +203,6 @@ async function buscarAnaliseServidor() {
             melhoresSinais.sort((a, b) => b.confianca - a.confianca);
             const campeao = melhoresSinais[0];
             
-            // Trava de tempo um pouco mais flexível (10s)
             const agora = new Date();
             const segundosRestantes = 60 - agora.getSeconds();
             
@@ -201,7 +223,7 @@ async function buscarAnaliseServidor() {
     }
 }
 
-// --- AUTO-AVALIAÇÃO SIMPLIFICADA ---
+// --- AUTO-AVALIAÇÃO SIMPLIFICADA (MANTIDA COMO ESTAVA) ---
 async function verificarResultados() {
     if (!sdk || sinaisParaAvaliar.length === 0) return;
     
