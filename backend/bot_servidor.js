@@ -4,7 +4,7 @@ let isBuscando = false;
 let ultimoAtivoEnviado = null;
 let configSolicitada = { timeframe: 'M1', mercado: 'OTC' };
 let ativosIgnoradosLista = [];
-let sinaisParaAvaliar = [];
+let sinaisParaAvaliar = []; // Memória para conferir os Win/Loss
 
 global.definirConfiguracao = (config) => {
     configSolicitada = config;
@@ -25,16 +25,16 @@ async function iniciarBotServidor(window, tokenSsid) {
         sdk = await ClientSdk.create(WS_URL, 82, new SsidAuthMethod(tokenSsid));
         global.BinaryOptionsDirection = BinaryOptionsDirection;
 
-        console.log("✅ SDK inicializado! Modo Turbo ativado.");
+        console.log("✅ SDK inicializado! Modo Turbo com Auto-Avaliação ativo.");
 
-        // Busca a cada 10 segundos (mais rápido)
+        // Loop de Busca (a cada 10 segundos)
         setInterval(async () => {
             if (!isBuscando && global.buscando) {
                 await buscarAnaliseServidor();
             }
         }, 10000);
 
-        // Avaliação a cada 10 segundos
+        // Loop de Avaliação (a cada 10 segundos)
         setInterval(async () => {
             await verificarResultados();
         }, 10000);
@@ -90,8 +90,7 @@ function analisarGraficoComEstrategias(candles) {
 
     let sinalEncontrado = null;
 
-    // ESTRATÉGIA 1: TENDÊNCIA (Sem filtro de ADX, mais fácil de achar)
-    // Se o preço está acima da EMA50 e a vela anterior foi de queda, mas a atual subiu, é CALL.
+    // ESTRATÉGIA 1: TENDÊNCIA (Pullback)
     if (spike.close < ema50 && atual.close > ema50 && atual.close > atual.open) {
         sinalEncontrado = { direcao: "CALL", estrategia: "Tendência (Pullback Compra)", confianca: 90 };
     }
@@ -107,11 +106,9 @@ function analisarGraficoComEstrategias(candles) {
             const pavioSup = spike.max - Math.max(spike.open, spike.close);
             const pavioInf = Math.min(spike.open, spike.close) - spike.min;
 
-            // Put: Spike de alta com pavio superior
             if (spike.close > spike.open && pavioSup > corpo && atual.close < atual.open && rsi > 60) {
                 sinalEncontrado = { direcao: "PUT", estrategia: "Spike Reversal (Venda)", confianca: 85 };
             }
-            // Call: Spike de baixa com pavio inferior
             if (spike.close < spike.open && pavioInf > corpo && atual.close > atual.open && rsi < 40) {
                 sinalEncontrado = { direcao: "CALL", estrategia: "Spike Reversal (Compra)", confianca: 85 };
             }
@@ -142,6 +139,7 @@ async function buscarAnaliseServidor() {
         }
         let melhoresSinais = [];
 
+        // Analisa em lotes de 5 para não travar a API
         for (let i = 0; i < ativosFiltrados.length; i += 5) {
             if (!global.buscando) break;
             const lote = ativosFiltrados.slice(i, i + 5);
@@ -180,10 +178,10 @@ async function buscarAnaliseServidor() {
             melhoresSinais.sort((a, b) => b.confianca - a.confianca);
             const campeao = melhoresSinais[0];
             
-            // Trava de tempo um pouco mais flexível (10s)
             const agora = new Date();
             const segundosRestantes = 60 - agora.getSeconds();
             
+            // Trava de tempo flexível (10s)
             if (segundosRestantes >= 10) {
                 ativosIgnoradosLista.push(campeao.tickerReal);
                 ultimoAtivoEnviado = campeao.tickerReal;
@@ -201,25 +199,31 @@ async function buscarAnaliseServidor() {
     }
 }
 
-// --- AUTO-AVALIAÇÃO SIMPLIFICADA ---
+// --- AUTO-AVALIAÇÃO DEFINITIVA (CONFERÊNCIA GARANTIDA) ---
 async function verificarResultados() {
     if (!sdk || sinaisParaAvaliar.length === 0) return;
-    
-    const agora = new Date();
-    const segundosAgora = agora.getSeconds();
-    if (segundosAgora < 15 || segundosAgora > 25) return; 
 
     const sinaisParaRemover = [];
+    const agora = Date.now();
 
     for (let i = 0; i < sinaisParaAvaliar.length; i++) {
         const sinal = sinaisParaAvaliar[i];
         
+        // Calcula quantos segundos se passaram desde que o sinal foi gerado
+        const tempoPassado = (agora - sinal.id) / 1000;
+        
+        // Se passou menos de 65 segundos (M1) ou 305 segundos (M5), a vela ainda não fechou
+        const tempoVela = sinal.timeframe === 'M5' ? 300 : 60;
+        if (tempoPassado < tempoVela + 5) {
+            continue; 
+        }
+
         try {
-            const seconds = sinal.timeframe === 'M5' ? 300 : 60;
-            const layer = await sdk.realTimeChartDataLayer(sinal.tickerReal, seconds);
-            const candles = await layer.fetchAllCandles(Math.floor(Date.now() / 1000) - (5 * seconds));
+            const layer = await sdk.realTimeChartDataLayer(sinal.tickerReal, tempoVela);
+            const candles = await layer.fetchAllCandles(Math.floor(Date.now() / 1000) - (5 * tempoVela));
 
             if (candles && candles.length >= 2) {
+                // A vela que fechou após o sinal é a penúltima do array
                 const velaFechada = candles[candles.length - 2];
                 
                 let result = "EMPATE";
@@ -232,16 +236,18 @@ async function verificarResultados() {
                 }
 
                 sinal.status = result;
-                console.log(`📊 [RESULTADO] ${sinal.ativo} | ${sinal.direcao} | ${result}`);
+                console.log(`\n📊 [AUTO-AVALIAÇÃO] ${sinal.ativo} | ${sinal.direcao} | Resultado: ${result}`);
                 
                 if (global.adicionarSinal) global.adicionarSinal(sinal);
+                
                 sinaisParaRemover.push(i);
             }
         } catch (e) {
-            sinaisParaRemover.push(i);
+            console.log(`⚠️ [AVALIAÇÃO] Erro de conexão ao conferir ${sinal.ativo}. Tentando novamente...`);
         }
     }
 
+    // Remove da lista os que já foram avaliados com sucesso
     for (let i = sinaisParaRemover.length - 1; i >= 0; i--) {
         sinaisParaAvaliar.splice(sinaisParaRemover[i], 1);
     }
