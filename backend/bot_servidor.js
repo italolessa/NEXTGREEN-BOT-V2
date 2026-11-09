@@ -88,12 +88,12 @@ function analisarGraficoComEstrategias(candles) {
 
     // 2. VOLUME EFRAIM (SMA de 2 períodos)
     const ma1 = calcularSMA(closes, 2);
-    const ma2 = calcularSMA(Array(10).fill(ma1), 2); // Simulação para a cascata de médias
+    const ma2 = calcularSMA(Array(10).fill(ma1), 2); 
     if (closes[closes.length - 1] > ma1 && closes[closes.length - 2] < ma2) {
          return { direcao: "CALL", estrategia: "Volume Efraim", confianca: 85 };
     }
 
-    // 3. ENGOLFO / CANDLESTICK (Foco no Engolfo)
+    // 3. ENGOLFO / CANDLESTICK
     const engolfoAlta = (atual.close > atual.open) && (anterior.close < anterior.open) && (atual.close > anterior.max);
     const engolfoBaixa = (atual.close < atual.open) && (anterior.close > anterior.open) && (atual.close < anterior.min);
     
@@ -101,14 +101,12 @@ function analisarGraficoComEstrategias(candles) {
     if (engolfoBaixa) return { direcao: "PUT", estrategia: "Engolfo de Baixa", confianca: 88 };
 
     // 4. HACKER OB (MACD + EMA + RSI + ADX)
-    // Como o código é complexo, traduzimos as condições principais de compra e venda
     const rsi = calcularRSI(closes, 10);
     const ema50 = calcularEMA(closes, 50);
     const smaFast = calcularSMA(closes, 5);
     const smaSlow = calcularSMA(closes, 20);
     
     if (smaFast > smaSlow && closes[closes.length - 1] > ema50 && rsi > 50) {
-        // Condição de compra simplificada do Hacker OB
         if (atual.close > atual.open) return { direcao: "CALL", estrategia: "Hacker OB (Tendência)", confianca: 92 };
     } else if (smaFast < smaSlow && closes[closes.length - 1] < ema50 && rsi < 50) {
         if (atual.close < atual.open) return { direcao: "PUT", estrategia: "Hacker OB (Tendência)", confianca: 92 };
@@ -134,7 +132,7 @@ async function buscarAnaliseServidor() {
     if (!sdk || !global.buscando) return;
     isBuscando = true;
     
-    console.log(`🔎 [ROBÔ] Executando Análise com 5 Estratégias...`);
+    console.log(`🔎 [ROBÔ] Executando Análise com 5 Estratégias (Lendo 100 velas)...`);
     
     try {
         const binaryOptions = await sdk.binaryOptions();
@@ -162,8 +160,13 @@ async function buscarAnaliseServidor() {
             const res = await Promise.all(lote.map(async (ativo) => {
                 const seconds = configSolicitada.timeframe === 'M5' ? 300 : 60; 
                 const layer = await sdk.realTimeChartDataLayer(ativo.id, seconds);
-                const candles = await layer.fetchAllCandles(Math.floor(Date.now() / 1000) - (250 * seconds)); 
-                if (!candles || candles.length < 210) return null;
+                
+                // AQUI ESTÁ A ALTERAÇÃO: Lendo as últimas 100 velas
+                const count = 100; 
+                const candles = await layer.fetchAllCandles(Math.floor(Date.now() / 1000) - (count * seconds)); 
+                
+                // Se tiver menos de 50 velas, ignora para não quebrar as médias
+                if (!candles || candles.length < 50) return null; 
                 
                 const resultado = analisarGraficoComEstrategias(candles);
                 
