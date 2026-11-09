@@ -4,7 +4,7 @@ let isBuscando = false;
 let ultimoAtivoEnviado = null;
 let configSolicitada = { timeframe: 'M1', mercado: 'OTC' };
 let ativosIgnoradosLista = [];
-let sinaisParaAvaliar = []; // Memória para conferir os Win/Loss
+let sinaisParaAvaliar = [];
 
 global.definirConfiguracao = (config) => {
     configSolicitada = config;
@@ -25,16 +25,16 @@ async function iniciarBotServidor(window, tokenSsid) {
         sdk = await ClientSdk.create(WS_URL, 82, new SsidAuthMethod(tokenSsid));
         global.BinaryOptionsDirection = BinaryOptionsDirection;
 
-        console.log("✅ SDK inicializado! Modo Turbo com Auto-Avaliação ativo.");
+        console.log("✅ SDK inicializado! Modo Turbo ativado.");
 
-        // Loop de Busca (a cada 10 segundos)
+        // Busca a cada 10 segundos (mais rápido)
         setInterval(async () => {
             if (!isBuscando && global.buscando) {
                 await buscarAnaliseServidor();
             }
         }, 10000);
 
-        // Loop de Avaliação (a cada 10 segundos)
+        // Avaliação a cada 10 segundos
         setInterval(async () => {
             await verificarResultados();
         }, 10000);
@@ -90,7 +90,7 @@ function analisarGraficoComEstrategias(candles) {
 
     let sinalEncontrado = null;
 
-    // ESTRATÉGIA 1: TENDÊNCIA (Pullback)
+    // ESTRATÉGIA 1: TENDÊNCIA (Sem filtro de ADX, mais fácil de achar)
     if (spike.close < ema50 && atual.close > ema50 && atual.close > atual.open) {
         sinalEncontrado = { direcao: "CALL", estrategia: "Tendência (Pullback Compra)", confianca: 90 };
     }
@@ -139,7 +139,6 @@ async function buscarAnaliseServidor() {
         }
         let melhoresSinais = [];
 
-        // Analisa em lotes de 5 para não travar a API
         for (let i = 0; i < ativosFiltrados.length; i += 5) {
             if (!global.buscando) break;
             const lote = ativosFiltrados.slice(i, i + 5);
@@ -181,7 +180,6 @@ async function buscarAnaliseServidor() {
             const agora = new Date();
             const segundosRestantes = 60 - agora.getSeconds();
             
-            // Trava de tempo flexível (10s)
             if (segundosRestantes >= 10) {
                 ativosIgnoradosLista.push(campeao.tickerReal);
                 ultimoAtivoEnviado = campeao.tickerReal;
@@ -199,7 +197,7 @@ async function buscarAnaliseServidor() {
     }
 }
 
-// --- AUTO-AVALIAÇÃO DEFINITIVA (CONFERÊNCIA GARANTIDA) ---
+// --- AUTO-AVALIAÇÃO CORRIGIDA (TEMPO DECORRIDO) ---
 async function verificarResultados() {
     if (!sdk || sinaisParaAvaliar.length === 0) return;
 
@@ -236,18 +234,16 @@ async function verificarResultados() {
                 }
 
                 sinal.status = result;
-                console.log(`\n📊 [AUTO-AVALIAÇÃO] ${sinal.ativo} | ${sinal.direcao} | Resultado: ${result}`);
+                console.log(`\n📊 [RESULTADO] ${sinal.ativo} | ${sinal.direcao} | ${result}`);
                 
                 if (global.adicionarSinal) global.adicionarSinal(sinal);
-                
                 sinaisParaRemover.push(i);
             }
         } catch (e) {
-            console.log(`⚠️ [AVALIAÇÃO] Erro de conexão ao conferir ${sinal.ativo}. Tentando novamente...`);
+            // Se der erro na API, apenas aguarda e tenta no próximo loop (não remove)
         }
     }
 
-    // Remove da lista os que já foram avaliados com sucesso
     for (let i = sinaisParaRemover.length - 1; i >= 0; i--) {
         sinaisParaAvaliar.splice(sinaisParaRemover[i], 1);
     }
