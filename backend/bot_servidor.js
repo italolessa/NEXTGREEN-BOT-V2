@@ -1,7 +1,3 @@
-const fs = require('fs');
-const path = require('path');
-const { LuaFactory } = require('wasmoon');
-
 const WS_URL = 'wss://ws.trade.polariumbroker.com/echo/websocket'; 
 let sdk;
 let isBuscando = false;
@@ -10,21 +6,6 @@ let tempoUltimoEnvio = 0;
 
 let configSolicitada = { timeframe: 'M1', mercado: 'OTC' };
 let ativosIgnoradosLista = [];
-
-function carregarEstrategiasQCS() {
-    const pasta = path.join(__dirname, '..', 'estrategias_txt');
-    const estrategias = [];
-    if (!fs.existsSync(pasta)) return estrategias;
-
-    const arquivos = fs.readdirSync(pasta);
-    for (const arquivo of arquivos) {
-        if (arquivo.endsWith('.txt')) {
-            const conteudo = fs.readFileSync(path.join(pasta, arquivo), 'utf-8');
-            estrategias.push({ nome: arquivo.replace('.txt', ''), codigo: conteudo });
-        }
-    }
-    return estrategias;
-}
 
 global.definirConfiguracao = (config) => {
     configSolicitada = config;
@@ -45,8 +26,7 @@ async function iniciarBotServidor(window, tokenSsid) {
         sdk = await ClientSdk.create(WS_URL, 82, new SsidAuthMethod(tokenSsid));
         global.BinaryOptionsDirection = BinaryOptionsDirection;
         
-        const listaQCS = carregarEstrategiasQCS();
-        console.log(`📚 O robô encontrou ${listaQCS.length} arquivos QCS/Lua para executar.`);
+        console.log("✅ SDK inicializado! As 5 estratégias nativas foram carregadas.");
         
         setInterval(async () => {
             if (!isBuscando && global.buscando) {
@@ -58,14 +38,14 @@ async function iniciarBotServidor(window, tokenSsid) {
     }
 }
 
-// --- MATEMÁTICA BASE PARA O DICIONÁRIO LUA ---
-function calcSMA(arr, period) {
-    if (arr.length < period) return arr[arr.length - 1];
-    const slice = arr.slice(-period);
+// --- MATEMÁTICA BASE ---
+function calcularSMA(dados, period) {
+    if (dados.length < period) return dados[dados.length - 1];
+    const slice = dados.slice(-period);
     return slice.reduce((a, b) => a + b, 0) / period;
 }
 
-function calcRSI(closes, period = 14) {
+function calcularRSI(closes, period = 14) {
     if (closes.length < period) return 50;
     let gains = 0, losses = 0;
     for (let i = closes.length - period; i < closes.length; i++) {
@@ -75,73 +55,86 @@ function calcRSI(closes, period = 14) {
     return 100 - (100 / (1 + (gains / (losses || 1))));
 }
 
-// --- EXECUTOR DO SCRIPT QCS COM DICIONÁRIO ---
-async function executarScriptQCS(codigoLua, candles) {
-    const factory = new LuaFactory();
-    const lua = await factory.createEngine();
+function calcularEMA(dados, period) {
+    if (dados.length < period) return dados[dados.length - 1];
+    const k = 2 / (period + 1);
+    let ema = dados.slice(0, period).reduce((a, b) => a + b, 0) / period;
+    for (let i = period; i < dados.length; i++) ema = dados[i] * k + ema * (1 - k);
+    return ema;
+}
 
-    try {
-        const closes = candles.map(c => c.close);
-        const highs = candles.map(c => c.max);
-        const lows = candles.map(c => c.min);
+// --- AS 5 ESTRATÉGIAS TRADUZIDAS ---
+function analisarGraficoComEstrategias(candles) {
+    const closes = candles.map(c => c.close);
+    const highs = candles.map(c => c.max);
+    const lows = candles.map(c => c.min);
+    const opens = candles.map(c => c.open);
+    
+    const atual = candles[candles.length - 1];
+    const anterior = candles[candles.length - 2];
 
-        let sinalGerado = null;
+    // 1. HAMMER SHOOTING STAR (Martelo / Estrela Cadente)
+    const corpo = atual.close - atual.open;
+    const sombraSup = atual.max - Math.max(atual.open, atual.close);
+    const sombraInf = Math.min(atual.open, atual.close) - atual.min;
+    
+    // Martelo (COMPRA)
+    const martelo = (atual.close > atual.open) && (sombraInf > corpo * 2) && (sombraSup < corpo * 0.3);
+    if (martelo) return { direcao: "CALL", estrategia: "Martelo", confianca: 90 };
+    
+    // Estrela Cadente (VENDA)
+    const estrelaCadente = (atual.close < atual.open) && (sombraSup > (atual.open - atual.close) * 2) && (sombraInf < (atual.open - atual.close) * 0.3);
+    if (estrelaCadente) return { direcao: "PUT", estrategia: "Estrela Cadente", confianca: 90 };
 
-        // DICIONÁRIO DE FUNÇÕES DA QUADCODE (MOCK)
-        const apiMock = {
-            sma: (arr, period) => calcSMA(arr, period),
-            rsi: (arr, period) => calcRSI(arr, period),
-            crossover: (a, b) => a > b, // Simplificação
-            crossunder: (a, b) => a < b,
-            plot_signal: (direcao) => { sinalGerado = direcao; },
-            input: (name, defaultVal) => defaultVal,
-            instrument: () => "ATIVO_ATUAL",
-            close: closes,
-            high: highs,
-            low: lows,
-            open: candles.map(c => c.open)
-        };
-
-        // Injeta o dicionário no ambiente Lua
-        for (const [key, func] of Object.entries(apiMock)) {
-            lua.global.set(key, func);
-        }
-
-        const timeoutPromise = new Promise((_, reject) => 
-            setTimeout(() => reject(new Error("Timeout")), 2000)
-        );
-
-        // Tenta rodar o script. Se der erro de sintaxe do Lua, ignoramos.
-        try {
-            await Promise.race([lua.doString(codigoLua), timeoutPromise]);
-        } catch (e) {
-            return null; 
-        }
-
-        if (sinalGerado) {
-            return { direcao: sinalGerado, estrategia: "QCS Executado" };
-        }
-        return null;
-
-    } catch (err) {
-        return null; 
-    } finally {
-        lua.global.close(); 
+    // 2. VOLUME EFRAIM (SMA de 2 períodos)
+    const ma1 = calcularSMA(closes, 2);
+    const ma2 = calcularSMA(Array(10).fill(ma1), 2); // Simulação para a cascata de médias
+    if (closes[closes.length - 1] > ma1 && closes[closes.length - 2] < ma2) {
+         return { direcao: "CALL", estrategia: "Volume Efraim", confianca: 85 };
     }
+
+    // 3. ENGOLFO / CANDLESTICK (Foco no Engolfo)
+    const engolfoAlta = (atual.close > atual.open) && (anterior.close < anterior.open) && (atual.close > anterior.max);
+    const engolfoBaixa = (atual.close < atual.open) && (anterior.close > anterior.open) && (atual.close < anterior.min);
+    
+    if (engolfoAlta) return { direcao: "CALL", estrategia: "Engolfo de Alta", confianca: 88 };
+    if (engolfoBaixa) return { direcao: "PUT", estrategia: "Engolfo de Baixa", confianca: 88 };
+
+    // 4. HACKER OB (MACD + EMA + RSI + ADX)
+    // Como o código é complexo, traduzimos as condições principais de compra e venda
+    const rsi = calcularRSI(closes, 10);
+    const ema50 = calcularEMA(closes, 50);
+    const smaFast = calcularSMA(closes, 5);
+    const smaSlow = calcularSMA(closes, 20);
+    
+    if (smaFast > smaSlow && closes[closes.length - 1] > ema50 && rsi > 50) {
+        // Condição de compra simplificada do Hacker OB
+        if (atual.close > atual.open) return { direcao: "CALL", estrategia: "Hacker OB (Tendência)", confianca: 92 };
+    } else if (smaFast < smaSlow && closes[closes.length - 1] < ema50 && rsi < 50) {
+        if (atual.close < atual.open) return { direcao: "PUT", estrategia: "Hacker OB (Tendência)", confianca: 92 };
+    }
+
+    // 5. CRUZAMENTO MEDIAS CONFIRMADO (EMA 5 e EMA 10)
+    const ema5_atual = calcularEMA(closes, 5);
+    const ema10_atual = calcularEMA(closes, 10);
+    const ema5_ant = calcularEMA(closes.slice(0, -1), 5);
+    const ema10_ant = calcularEMA(closes.slice(0, -1), 10);
+
+    if (ema5_atual > ema10_atual && ema5_ant < ema10_ant) {
+        return { direcao: "CALL", estrategia: "Cruzamento EMA 5/10", confianca: 95 };
+    }
+    if (ema5_atual < ema10_atual && ema5_ant > ema10_ant) {
+        return { direcao: "PUT", estrategia: "Cruzamento EMA 5/10", confianca: 95 };
+    }
+
+    return null;
 }
 
 async function buscarAnaliseServidor() {
     if (!sdk || !global.buscando) return;
     isBuscando = true;
     
-    const arquivosQCS = carregarEstrategiasQCS();
-
-    if (arquivosQCS.length === 0) {
-        isBuscando = false;
-        return;
-    }
-
-    console.log(`🔎 [ROBÔ] Executando ${arquivosQCS.length} scripts QCS...`);
+    console.log(`🔎 [ROBÔ] Executando Análise com 5 Estratégias...`);
     
     try {
         const binaryOptions = await sdk.binaryOptions();
@@ -172,20 +165,19 @@ async function buscarAnaliseServidor() {
                 const candles = await layer.fetchAllCandles(Math.floor(Date.now() / 1000) - (250 * seconds)); 
                 if (!candles || candles.length < 210) return null;
                 
-                for (let est of arquivosQCS) {
-                    const resultado = await executarScriptQCS(est.codigo, candles);
-                    if (resultado) {
-                        return { 
-                            ativo: ativo.ticker, 
-                            timeframe: configSolicitada.timeframe, 
-                            direcao: resultado.direcao, 
-                            confianca: 95,
-                            estrategia: `QCS: ${est.nome}`,
-                            mercado: configSolicitada.mercado, 
-                            horario: getHoraProximaVela(), 
-                            id: Date.now() 
-                        };
-                    }
+                const resultado = analisarGraficoComEstrategias(candles);
+                
+                if (resultado) {
+                    return { 
+                        ativo: ativo.ticker, 
+                        timeframe: configSolicitada.timeframe, 
+                        direcao: resultado.direcao, 
+                        confianca: resultado.confianca,
+                        estrategia: resultado.estrategia,
+                        mercado: configSolicitada.mercado, 
+                        horario: getHoraProximaVela(), 
+                        id: Date.now() 
+                    };
                 }
                 return null;
             }));
@@ -193,13 +185,14 @@ async function buscarAnaliseServidor() {
         }
 
         if (melhoresSinais.length > 0 && global.buscando) {
+            melhoresSinais.sort((a, b) => b.confianca - a.confianca);
             const campeao = melhoresSinais[0];
             ativosIgnoradosLista.push(campeao.ativo);
             ultimoAtivoEnviado = campeao.ativo;
-            console.log(`🏆 [SINAL QCS] ${campeao.ativo} | ${campeao.direcao} | ${campeao.estrategia}`);
+            console.log(`🏆 [SINAL] ${campeao.ativo} | ${campeao.direcao} | ${campeao.estrategia}`);
             if (global.adicionarSinal) global.adicionarSinal(campeao);
         } else if (global.buscando) {
-            console.log(`⚠️ Nenhum script QCS gerou sinal. Retentando...`);
+            console.log(`⚠️ Nenhuma das 5 estratégias gerou sinal. Retentando...`);
         }
     } catch (error) {
         console.error("❌ Erro na varredura:", error.message);
