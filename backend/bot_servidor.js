@@ -34,7 +34,7 @@ async function iniciarBotServidor(window, tokenSsid) {
         sdk = await ClientSdk.create(WS_URL, 82, new SsidAuthMethod(tokenSsid));
         global.BinaryOptionsDirection = BinaryOptionsDirection;
 
-        console.log("✅ SDK inicializado! Cérebro Simples (RSI + Pavio) ativo.");
+        console.log("✅ SDK inicializado! Cérebro Flexível (Mais Sinais) ativo.");
 
         setInterval(async () => {
             if (!isBuscando && global.buscando) {
@@ -52,6 +52,14 @@ async function iniciarBotServidor(window, tokenSsid) {
 }
 
 // --- MATEMÁTICA DOS INDICADORES ---
+function calcularEMA(dados, period) {
+    if (dados.length < period) return dados[dados.length - 1];
+    const k = 2 / (period + 1);
+    let ema = dados.slice(0, period).reduce((a, b) => a + b, 0) / period;
+    for (let i = period; i < dados.length; i++) ema = dados[i] * k + ema * (1 - k);
+    return ema;
+}
+
 function calcularRSI(closes, period = 14) {
     if (closes.length < period) return 50;
     let gains = 0, losses = 0;
@@ -65,34 +73,51 @@ function calcularRSI(closes, period = 14) {
     return 100 - (100 / (1 + (avgGain / avgLoss)));
 }
 
-// --- O CÉREBRO SIMPLES (RSI + PAVIO DE REJEIÇÃO) ---
+// --- O CÉREBRO FLEXÍVEL (MAIS SINAIS) ---
 function analisarGraficoComEstrategias(candles) {
     const closes = candles.map(c => c.close);
     const rsi = calcularRSI(closes);
+    const ema9 = calcularEMA(closes, 9);
+    const ema21 = calcularEMA(closes, 21);
     
     const atual = candles[candles.length - 1];
     const anterior = candles[candles.length - 2];
 
-    // Cálculo do corpo e dos pavios da vela atual
     const corpo = Math.abs(atual.close - atual.open);
     const pavioSuperior = atual.max - Math.max(atual.open, atual.close);
     const pavioInferior = Math.min(atual.open, atual.close) - atual.min;
 
-    // SINAL DE COMPRA (CALL): RSI sobrevendido + Pavio inferior grande (rejeição de queda)
-    if (rsi < 35 && pavioInferior > corpo * 1.5) {
+    // ESTRATÉGIA 1: REVERSÃO (RSI + PAVIO) - FILTROS RELAXADOS
+    // RSI < 40 (em vez de 35) e pavio apenas maior que o corpo (em vez de 1.5x)
+    if (rsi < 40 && pavioInferior > corpo) {
         return { 
             direcao: "CALL", 
             estrategia: "Reversão (RSI + Pavio)", 
-            confianca: 90 
+            confianca: 88 
         };
     }
-
-    // SINAL DE VENDA (PUT): RSI sobrecomprado + Pavio superior grande (rejeição de alta)
-    if (rsi > 65 && pavioSuperior > corpo * 1.5) {
+    if (rsi > 60 && pavioSuperior > corpo) {
         return { 
             direcao: "PUT", 
             estrategia: "Reversão (RSI + Pavio)", 
-            confianca: 90 
+            confianca: 88 
+        };
+    }
+
+    // ESTRATÉGIA 2: TENDÊNCIA (EMAs) - SE O RSI NÃO ESTIVER NOS EXTREMOS
+    // Se a EMA9 > EMA21 e a vela atual for de alta, compra (mesmo com RSI neutro)
+    if (ema9 > ema21 && atual.close > atual.open && rsi > 50) {
+        return { 
+            direcao: "CALL", 
+            estrategia: "Tendência (EMA 9/21)", 
+            confianca: 85 
+        };
+    }
+    if (ema9 < ema21 && atual.close < atual.open && rsi < 50) {
+        return { 
+            direcao: "PUT", 
+            estrategia: "Tendência (EMA 9/21)", 
+            confianca: 85 
         };
     }
     
@@ -138,7 +163,6 @@ async function buscarAnaliseServidor() {
         
         let melhoresSinais = [];
 
-        // Lotes de 10 em 10 e apenas 30 velas para ser rápido
         for (let i = 0; i < ativosFiltrados.length; i += 10) {
             if (!global.buscando) break;
             const lote = ativosFiltrados.slice(i, i + 10);
