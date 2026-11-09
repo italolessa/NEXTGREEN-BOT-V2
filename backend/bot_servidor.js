@@ -6,10 +6,12 @@ let configSolicitada = { timeframe: 'M1', mercado: 'OTC' };
 let ativosIgnoradosLista = [];
 let sinaisParaAvaliar = [];
 
-// LISTA DE PALAVRAS PROIBIDAS (Ações e Empresas)
-const ACOES_PROIBIDAS = [
-    'TESLA', 'FORD', 'OPENAI', 'SPACEX', 'ANTHROPIC', 'APPLE', 'MICROSOFT', 
-    'AMAZON', 'GOOGLE', 'META', 'NETFLIX', 'NVIDIA', 'INTEL', 'IBM', 
+// LISTA NEGRA: Ações, Índices e Empresas que NÃO queremos operar
+const ACOES_E_INDICES_PROIBIDOS = [
+    'AAPL', 'APPLE', 'MSFT', 'MICROSOFT', 'TSLA', 'TESLA', 'AMZN', 'AMAZON', 
+    'GOOGL', 'GOOGLE', 'META', 'FACEBOOK', 'NFLX', 'NETFLIX', 'NVDA', 'NVIDIA', 
+    'INTC', 'INTEL', 'IBM', 'FORD', 'OPENAI', 'SPACEX', 'ANTHROPIC', 'DAX', 
+    'S&P', 'SP500', 'NASDAQ', 'US100', 'US30', 'DOWJONES', 'JP225', 
     'COCA', 'PEPSI', 'MCDONALD', 'BOEING', 'PFIZER', 'JOHNSON'
 ];
 
@@ -32,7 +34,7 @@ async function iniciarBotServidor(window, tokenSsid) {
         sdk = await ClientSdk.create(WS_URL, 82, new SsidAuthMethod(tokenSsid));
         global.BinaryOptionsDirection = BinaryOptionsDirection;
 
-        console.log("✅ SDK inicializado! Cérebro NextGreen (Confluência Real) ativo.");
+        console.log("✅ SDK inicializado! Cérebro Supremo (Filtro Anti-Ações) ativo.");
 
         setInterval(async () => {
             if (!isBuscando && global.buscando) {
@@ -72,7 +74,7 @@ function calcularRSI(closes, period = 14) {
 }
 
 function calcularADX(highs, lows, closes, period = 14) {
-    if (closes.length < period) return { adx: 0, plusDI: 0, minusDI: 0 };
+    if (closes.length < period) return { adx: 0 };
     let trs = [], plusDMs = [], minusDMs = [];
     for (let i = 1; i < closes.length; i++) {
         const tr = Math.max(highs[i] - lows[i], Math.abs(highs[i] - closes[i - 1]), Math.abs(lows[i] - closes[i - 1]));
@@ -88,74 +90,81 @@ function calcularADX(highs, lows, closes, period = 14) {
     const plusDI = avgTR === 0 ? 0 : (avgPlusDM / avgTR) * 100;
     const minusDI = avgTR === 0 ? 0 : (avgMinusDM / avgTR) * 100;
     const dx = (plusDI + minusDI) === 0 ? 0 : Math.abs(plusDI - minusDI) / (plusDI + minusDI) * 100;
-    return { adx: dx, plusDI, minusDI };
+    return { adx: dx };
 }
 
-function calcularATR(highs, lows, closes, period = 14) {
-    if (closes.length < period + 1) return 0;
-    let trs = [];
-    for (let i = 1; i < closes.length; i++) {
-        const tr = Math.max(highs[i] - lows[i], Math.abs(highs[i] - closes[i - 1]), Math.abs(lows[i] - closes[i - 1]));
-        trs.push(tr);
+function converterParaHeikinAshi(candles) {
+    let haCandles = [];
+    for (let i = 0; i < candles.length; i++) {
+        const close = (candles[i].open + candles[i].max + candles[i].min + candles[i].close) / 4;
+        let open;
+        if (i === 0) {
+            open = (candles[i].open + candles[i].close) / 2;
+        } else {
+            open = (haCandles[i - 1].open + haCandles[i - 1].close) / 2;
+        }
+        haCandles.push({
+            open: open,
+            close: close,
+            max: Math.max(candles[i].max, open, close),
+            min: Math.min(candles[i].min, open, close)
+        });
     }
-    return trs.slice(-period).reduce((a, b) => a + b, 0) / period;
+    return haCandles;
 }
 
-// --- O CÉREBRO NEXTGREEN CLONADO ---
+
+// --- O CÉREBRO SUPREMO (MÚLTIPLOS MOTORES) ---
 function analisarGraficoComEstrategias(candles) {
+    // --- MOTOR 1: TENDÊNCIA (Emas + RSI) ---
     const closes = candles.map(c => c.close);
-    const highs = candles.map(c => c.max);
-    const lows = candles.map(c => c.min);
+    const rsi = calcularRSI(closes);
+    const ema9 = calcularEMA(closes, 9);
+    const ema21 = calcularEMA(closes, 21);
     const atual = candles[candles.length - 1];
+    const anterior = candles[candles.length - 2];
+
+    // Sinal de tendência: Emas cruzadas e RSI confirma
+    if (ema9 > ema21 && anterior.close < anterior.open && atual.close > atual.open && rsi > 50) {
+        return { direcao: "CALL", estrategia: "Tendência (EMA+RSI)", confianca: 92 };
+    }
+    if (ema9 < ema21 && anterior.close > anterior.open && atual.close < atual.open && rsi < 50) {
+        return { direcao: "PUT", estrategia: "Tendência (EMA+RSI)", confianca: 92 };
+    }
+
+    // --- MOTOR 2: CONSOLIDAÇÃO (Bollinger + ADX) ---
+    const adxData = calcularADX(candles.map(c=>c.max), candles.map(c=>c.min), closes);
+    if (adxData.adx < 20) { // Se o mercado está lateral
+        const sma20 = closes.slice(-20).reduce((a, b) => a + b, 0) / 20;
+        const desvioPadrao = Math.sqrt(closes.slice(-20).reduce((acc, val) => acc + Math.pow(val - sma20, 2), 0) / 20);
+        const bandaSuperior = sma20 + (desvioPadrao * 2);
+        const bandaInferior = sma20 - (desvioPadrao * 2);
+
+        // Reversão na banda
+        if (atual.max > bandaSuperior && atual.close < bandaSuperior) {
+            return { direcao: "PUT", estrategia: "Consolidação (Bollinger)", confianca: 88 };
+        }
+        if (atual.min < bandaInferior && atual.close > bandaInferior) {
+            return { direcao: "CALL", estrategia: "Consolidação (Bollinger)", confianca: 88 };
+        }
+    }
+
+    // --- MOTOR 3: HEIKIN ASHI (Tendência Forte) ---
+    const haCandles = converterParaHeikinAshi(candles);
+    const haAtual = haCandles[haCandles.length - 1];
+    const haAnterior = haCandles[haCandles.length - 2];
+    const haAnterior2 = haCandles[haCandles.length - 3];
+
+    // 3 velas HA verdes + RSI forte
+    if (haAtual.close > haAtual.open && haAnterior.close > haAnterior.open && haAnterior2.close > haAnterior2.open && rsi > 60) {
+         return { direcao: "CALL", estrategia: "Heikin Ashi (Tendência)", confianca: 95 };
+    }
+    // 3 velas HA vermelhas + RSI fraco
+    if (haAtual.close < haAtual.open && haAnterior.close < haAnterior.open && haAnterior2.close < haAnterior2.open && rsi < 40) {
+         return { direcao: "PUT", estrategia: "Heikin Ashi (Tendência)", confianca: 95 };
+    }
     
-    const rsi = calcularRSI(closes, 14);
-    const adxData = calcularADX(highs, lows, closes, 14);
-    const adx = adxData.adx;
-    const atr = calcularATR(highs, lows, closes, 14);
-    const ema50 = calcularEMA(closes, 50); 
-
-    let sinalEncontrado = null;
-
-    // 1. ANÁLISE DE CONSISTÊNCIA (Contagem de Velas)
-    // Pega as últimas 15 velas (não incluindo a atual que está formando)
-    const ultimas15 = candles.slice(-16, -1);
-    let verdes = 0, vermelhas = 0;
-    for (let c of ultimas15) {
-        if (c.close > c.open) verdes++;
-        else if (c.close < c.open) vermelhas++;
-    }
-    const totalVelas = verdes + vermelhas;
-    const porcentagemVermelhas = totalVelas > 0 ? (vermelhas / totalVelas) * 100 : 0;
-    const porcentagemVerdes = totalVelas > 0 ? (verdes / totalVelas) * 100 : 0;
-
-    // 2. LÓGICA DE SINAL (Baseada na Mesa de Decisão)
-    // Exemplo: Queda forte = RSI < 30 e ADX > 25 e maioria das velas vermelhas
-    
-    // SINAL DE VENDA (PUT)
-    if (rsi < 35 && adx > 25 && porcentagemVermelhas > 65) {
-        sinalEncontrado = { 
-            direcao: "PUT", 
-            estrategia: "Confluência (RSI+ADX+Tendência)", 
-            confianca: 88 
-        };
-    }
-    
-    // SINAL DE COMPRA (CALL)
-    if (rsi > 65 && adx > 25 && porcentagemVerdes > 65) {
-        sinalEncontrado = { 
-            direcao: "CALL", 
-            estrategia: "Confluência (RSI+ADX+Tendência)", 
-            confianca: 88 
-        };
-    }
-
-    // 3. FILTRO DE VOLATILIDADE (ATR)
-    // Se o ATR for muito baixo, o mercado está morto. Ignora.
-    if (sinalEncontrado && atr < (atual.close * 0.0001)) {
-        return null;
-    }
-
-    return sinalEncontrado;
+    return null;
 }
 
 async function buscarAnaliseServidor() {
@@ -172,23 +181,27 @@ async function buscarAnaliseServidor() {
             const estaAberto = a.canBeBoughtAt(now);
             const jaFoiMostrado = ativosIgnoradosLista.includes(a.ticker);
             
-            let ehAcao = false;
-            for (let palavra of ACOES_PROIBIDAS) {
-                if (a.ticker.toUpperCase().includes(palavra)) { ehAcao = true; break; }
+            // FILTRO ANTI-AÇÕES E ÍNDICES
+            let ehProibido = false;
+            for (let palavra of ACOES_E_INDICES_PROIBIDOS) {
+                if (a.ticker.toUpperCase().includes(palavra)) {
+                    ehProibido = true;
+                    break;
+                }
             }
 
-            return mercadoOk && estaAberto && !jaFoiMostrado && !ehAcao;
+            return mercadoOk && estaAberto && !jaFoiMostrado && !ehProibido;
         });
 
         if (ativosFiltrados.length === 0) {
             ativosIgnoradosLista = [];
             ativosFiltrados = actives.filter(a => {
                 const mercadoOk = configSolicitada.mercado === 'OTC' ? a.ticker.includes('-OTC') : !a.ticker.includes('-OTC');
-                let ehAcao = false;
-                for (let palavra of ACOES_PROIBIDAS) {
-                    if (a.ticker.toUpperCase().includes(palavra)) { ehAcao = true; break; }
+                let ehProibido = false;
+                for (let palavra of ACOES_E_INDICES_PROIBIDOS) {
+                    if (a.ticker.toUpperCase().includes(palavra)) { ehProibido = true; break; }
                 }
-                return mercadoOk && a.canBeBoughtAt(now) && !ehAcao;
+                return mercadoOk && a.canBeBoughtAt(now) && !ehProibido;
             });
         }
         
@@ -201,10 +214,10 @@ async function buscarAnaliseServidor() {
             const res = await Promise.all(lote.map(async (ativo) => {
                 const seconds = configSolicitada.timeframe === 'M5' ? 300 : 60;
                 const layer = await sdk.realTimeChartDataLayer(ativo.id, seconds);
-                const count = 100;
+                const count = 50; // Otimização: lendo 50 velas
                 const candles = await layer.fetchAllCandles(Math.floor(Date.now() / 1000) - (count * seconds));
 
-                if (!candles || candles.length < 50) return null;
+                if (!candles || candles.length < 30) return null;
 
                 const resultado = analisarGraficoComEstrategias(candles);
 
@@ -252,19 +265,15 @@ async function buscarAnaliseServidor() {
     }
 }
 
-// --- AUTO-AVALIAÇÃO SIMPLIFICADA ---
+// --- AUTO-AVALIAÇÃO ---
 async function verificarResultados() {
     if (!sdk || sinaisParaAvaliar.length === 0) return;
-    
     const agora = new Date();
-    const segundosAgora = agora.getSeconds();
-    if (segundosAgora < 15 || segundosAgora > 25) return; 
+    if (agora.getSeconds() > 10) return; 
 
     const sinaisParaRemover = [];
-
     for (let i = 0; i < sinaisParaAvaliar.length; i++) {
         const sinal = sinaisParaAvaliar[i];
-        
         try {
             const seconds = sinal.timeframe === 'M5' ? 300 : 60;
             const layer = await sdk.realTimeChartDataLayer(sinal.tickerReal, seconds);
@@ -272,7 +281,6 @@ async function verificarResultados() {
 
             if (candles && candles.length >= 2) {
                 const velaFechada = candles[candles.length - 2];
-                
                 let result = "EMPATE";
                 if (sinal.direcao === "CALL" || sinal.direcao === "COMPRA") {
                     if (velaFechada.close > velaFechada.open) result = "WIN";
@@ -284,7 +292,6 @@ async function verificarResultados() {
 
                 sinal.status = result;
                 console.log(`📊 [RESULTADO] ${sinal.ativo} | ${sinal.direcao} | ${result}`);
-                
                 if (global.adicionarSinal) global.adicionarSinal(sinal);
                 sinaisParaRemover.push(i);
             }
